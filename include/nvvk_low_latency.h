@@ -29,7 +29,27 @@ typedef enum NvvkLatencyMarker {
     NVVK_LATENCY_MARKER_PRESENT_END = 5,
     NVVK_LATENCY_MARKER_INPUT_SAMPLE = 6,
     NVVK_LATENCY_MARKER_TRIGGER_FLASH = 7,
+    NVVK_LATENCY_MARKER_OUT_OF_BAND_RENDERSUBMIT_START = 8,
+    NVVK_LATENCY_MARKER_OUT_OF_BAND_RENDERSUBMIT_END = 9,
+    NVVK_LATENCY_MARKER_OUT_OF_BAND_PRESENT_START = 10,
+    NVVK_LATENCY_MARKER_OUT_OF_BAND_PRESENT_END = 11,
 } NvvkLatencyMarker;
+
+/* Frame timing data from driver */
+typedef struct NvvkFrameTimings {
+    uint64_t present_id;
+    uint64_t input_sample_time_us;
+    uint64_t sim_start_time_us;
+    uint64_t sim_end_time_us;
+    uint64_t render_submit_start_time_us;
+    uint64_t render_submit_end_time_us;
+    uint64_t present_start_time_us;
+    uint64_t present_end_time_us;
+    uint64_t driver_start_time_us;
+    uint64_t driver_end_time_us;
+    uint64_t gpu_render_start_time_us;
+    uint64_t gpu_render_end_time_us;
+} NvvkFrameTimings;
 
 /* Opaque low latency context handle */
 typedef struct NvvkLowLatencyContext* nvvk_low_latency_ctx_t;
@@ -120,6 +140,34 @@ void nvvk_low_latency_begin_render_submit(nvvk_low_latency_ctx_t ctx);
 void nvvk_low_latency_end_render_submit(nvvk_low_latency_ctx_t ctx);
 void nvvk_low_latency_begin_present(nvvk_low_latency_ctx_t ctx);
 void nvvk_low_latency_end_present(nvvk_low_latency_ctx_t ctx);
+
+/*
+ * Mark input sample point. Call this when sampling user input.
+ * Critical for accurate input-to-display latency measurement.
+ */
+void nvvk_low_latency_mark_input_sample(nvvk_low_latency_ctx_t ctx);
+
+/*
+ * Get current frame ID (present ID).
+ */
+uint64_t nvvk_low_latency_get_current_frame_id(nvvk_low_latency_ctx_t ctx);
+
+/*
+ * Get frame timing data from driver.
+ *
+ * Parameters:
+ *   ctx - Low latency context
+ *   timings - Array to receive timing data
+ *   max_count - Maximum number of timings to retrieve
+ *
+ * Returns:
+ *   Number of timings written to array
+ */
+uint32_t nvvk_low_latency_get_timings(
+    nvvk_low_latency_ctx_t ctx,
+    NvvkFrameTimings* timings,
+    uint32_t max_count
+);
 
 /*
  * Example usage in DXVK:

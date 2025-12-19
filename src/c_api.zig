@@ -34,6 +34,26 @@ pub const NvvkLatencyMarker = enum(i32) {
     present_end = 5,
     input_sample = 6,
     trigger_flash = 7,
+    out_of_band_rendersubmit_start = 8,
+    out_of_band_rendersubmit_end = 9,
+    out_of_band_present_start = 10,
+    out_of_band_present_end = 11,
+};
+
+/// Frame timing data returned from driver
+pub const NvvkFrameTimings = extern struct {
+    present_id: u64,
+    input_sample_time_us: u64,
+    sim_start_time_us: u64,
+    sim_end_time_us: u64,
+    render_submit_start_time_us: u64,
+    render_submit_end_time_us: u64,
+    present_start_time_us: u64,
+    present_end_time_us: u64,
+    driver_start_time_us: u64,
+    driver_end_time_us: u64,
+    gpu_render_start_time_us: u64,
+    gpu_render_end_time_us: u64,
 };
 
 pub const NvvkCheckpointTag = enum(i32) {
@@ -171,9 +191,60 @@ export fn nvvk_low_latency_set_marker(
         .present_end => .present_end,
         .input_sample => .input_sample,
         .trigger_flash => .trigger_flash,
+        .out_of_band_rendersubmit_start => .out_of_band_rendersubmit_start,
+        .out_of_band_rendersubmit_end => .out_of_band_rendersubmit_end,
+        .out_of_band_present_start => .out_of_band_present_start,
+        .out_of_band_present_end => .out_of_band_present_end,
     };
 
     h.ctx.setMarker(zig_marker);
+}
+
+/// Mark input sample point (convenience function)
+export fn nvvk_low_latency_mark_input_sample(handle: ?*LowLatencyHandle) void {
+    const h = handle orelse return;
+    h.ctx.markInputSample();
+}
+
+/// Get frame timing data
+/// Returns number of timings written, 0 if not supported or error
+export fn nvvk_low_latency_get_timings(
+    handle: ?*LowLatencyHandle,
+    timings: [*]NvvkFrameTimings,
+    max_count: u32,
+) u32 {
+    const h = handle orelse return 0;
+    const allocator = gpa.allocator();
+
+    const zig_timings = h.ctx.getTimings(allocator) catch return 0;
+    defer allocator.free(zig_timings);
+
+    const count = @min(zig_timings.len, max_count);
+    for (0..count) |i| {
+        const t = zig_timings[i];
+        timings[i] = .{
+            .present_id = t.present_id,
+            .input_sample_time_us = t.input_sample_time_us,
+            .sim_start_time_us = t.sim_start_time_us,
+            .sim_end_time_us = t.sim_end_time_us,
+            .render_submit_start_time_us = t.render_submit_start_time_us,
+            .render_submit_end_time_us = t.render_submit_end_time_us,
+            .present_start_time_us = t.present_start_time_us,
+            .present_end_time_us = t.present_end_time_us,
+            .driver_start_time_us = t.driver_start_time_us,
+            .driver_end_time_us = t.driver_end_time_us,
+            .gpu_render_start_time_us = t.gpu_render_start_time_us,
+            .gpu_render_end_time_us = t.gpu_render_end_time_us,
+        };
+    }
+
+    return @intCast(count);
+}
+
+/// Get current frame ID
+export fn nvvk_low_latency_get_current_frame_id(handle: ?*const LowLatencyHandle) u64 {
+    const h = handle orelse return 0;
+    return h.ctx.current_present_id;
 }
 
 /// Begin a new frame (increments present ID, sets simulation start marker)
