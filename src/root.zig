@@ -47,6 +47,12 @@ pub const ray_tracing_reorder = @import("ray_tracing_reorder.zig");
 pub const cuda_interop = @import("cuda_interop.zig");
 pub const displacement_micromap = @import("displacement_micromap.zig");
 
+// Frame generation modules (Phase 3)
+pub const motion_vectors = @import("motion_vectors.zig");
+pub const frame_synthesis = @import("frame_synthesis.zig");
+pub const frame_generation = @import("frame_generation.zig");
+pub const present_injection = @import("present_injection.zig");
+
 // Re-export commonly used types
 pub const VkResult = vulkan.VkResult;
 pub const VulkanError = vulkan.VulkanError;
@@ -99,10 +105,28 @@ pub const LaunchConfig = cuda_interop.LaunchConfig;
 pub const DisplacementMicromapProperties = displacement_micromap.DisplacementMicromapProperties;
 pub const DisplacementConfig = displacement_micromap.DisplacementConfig;
 
+// Frame generation exports
+pub const MotionVectorContext = motion_vectors.MotionVectorContext;
+pub const MotionVectorConfig = motion_vectors.MotionVectorConfig;
+pub const MotionVectorBuffer = motion_vectors.MotionVectorBuffer;
+pub const FrameSynthesisContext = frame_synthesis.FrameSynthesisContext;
+pub const FrameGenContext = frame_generation.FrameGenContext;
+pub const FrameGenConfig = frame_generation.FrameGenConfig;
+pub const FrameGenMode = frame_generation.FrameGenMode;
+pub const FrameGenStats = frame_generation.FrameGenStats;
+pub const GeneratedFrame = frame_generation.GeneratedFrame;
+
+// Present injection exports
+pub const PresentInjectionContext = present_injection.PresentInjectionContext;
+pub const InjectionConfig = present_injection.InjectionConfig;
+pub const InjectionMode = present_injection.InjectionMode;
+pub const TimingMode = present_injection.TimingMode;
+pub const InjectionStats = present_injection.InjectionStats;
+
 /// Library version
 pub const version = std.SemanticVersion{
     .major = 0,
-    .minor = 2,
+    .minor = 3,
     .patch = 0,
 };
 
@@ -250,7 +274,7 @@ pub const ext_names = struct {
 
 test "version" {
     try std.testing.expectEqual(@as(u8, 0), version.major);
-    try std.testing.expectEqual(@as(u8, 2), version.minor);
+    try std.testing.expectEqual(@as(u8, 3), version.minor);
     try std.testing.expectEqual(@as(u8, 0), version.patch);
 }
 

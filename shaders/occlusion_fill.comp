@@ -1,0 +1,79 @@
+#version 450
+
+/*
+ * Occlusion Fill Shader
+ *
+ * Detects and fills disoccluded regions in warped frames.
+ * Uses confidence/cost map to identify holes and fills with
+ * neighboring pixels or original frame data.
+ */
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Warped frame with potential holes
+layout(set = 0, binding = 0) uniform sampler2D warpedFrame;
+
+// Original frame for fallback
+layout(set = 0, binding = 1) uniform sampler2D originalFrame;
+
+// Cost/confidence map
+layout(set = 0, binding = 2) uniform sampler2D costMap;
+
+// Output filled frame
+layout(set = 0, binding = 3, rgba8) uniform writeonly image2D outputFrame;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    float occlusionThreshold;  // Cost threshold for occlusion detection
+    float fillRadius;          // Search radius for fill
+    float interpolation;       // Interpolation factor
+    float _reserved;
+} pc;
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outputSize = imageSize(outputFrame);
+
+    if (pixelCoord.x >= outputSize.x || pixelCoord.y >= outputSize.y) {
+        return;
+    }
+
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(outputSize);
+    vec2 texelSize = 1.0 / vec2(outputSize);
+
+    vec4 warpedColor = texture(warpedFrame, uv);
+    float cost = texture(costMap, uv).r;
+
+    // Check if this pixel is occluded (high cost = unreliable)
+    if (cost > pc.occlusionThreshold) {
+        // Try to fill from neighbors with lower cost
+        vec4 fillColor = vec4(0.0);
+        float fillWeight = 0.0;
+
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue;
+
+                vec2 neighborUV = uv + vec2(dx, dy) * texelSize * pc.fillRadius;
+                float neighborCost = texture(costMap, neighborUV).r;
+
+                if (neighborCost < pc.occlusionThreshold) {
+                    float weight = 1.0 - (neighborCost / pc.occlusionThreshold);
+                    fillColor += texture(warpedFrame, neighborUV) * weight;
+                    fillWeight += weight;
+                }
+            }
+        }
+
+        if (fillWeight > 0.1) {
+            // Use neighbor-filled color
+            warpedColor = fillColor / fillWeight;
+        } else {
+            // Fallback to original frame with interpolation blend
+            vec4 origColor = texture(originalFrame, uv);
+            warpedColor = mix(warpedColor, origColor, 0.5);
+        }
+    }
+
+    imageStore(outputFrame, pixelCoord, warpedColor);
+}

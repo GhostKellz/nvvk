@@ -4,6 +4,51 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // =========================================================================
+    // Shader Compilation (GLSL → SPIR-V)
+    // =========================================================================
+    // Run with: zig build shaders
+    // Requires glslc (Vulkan SDK) or glslangValidator
+    const shader_step = b.step("shaders", "Compile GLSL shaders to SPIR-V");
+
+    const shaders = [_][]const u8{
+        "forward_warp",
+        "backward_warp",
+        "linear_blend",
+        "confidence_blend",
+        "occlusion_fill",
+    };
+
+    for (shaders) |shader_name| {
+        const glsl_path = b.fmt("shaders/{s}.comp", .{shader_name});
+        const spv_path = b.fmt("shaders/{s}.spv", .{shader_name});
+
+        // Compile GLSL to SPIR-V using glslc
+        const compile_cmd = b.addSystemCommand(&.{"glslc"});
+        compile_cmd.addArgs(&.{
+            "-O",
+            "--target-env=vulkan1.2",
+            "-o",
+            spv_path,
+        });
+        compile_cmd.addFileArg(b.path(glsl_path));
+
+        shader_step.dependOn(&compile_cmd.step);
+    }
+
+    // Install shaders step (separate from main build)
+    const install_shaders_step = b.step("install-shaders", "Install compiled shaders");
+    install_shaders_step.dependOn(shader_step);
+    for (shaders) |shader_name| {
+        const spv_path = b.fmt("shaders/{s}.spv", .{shader_name});
+        const install_file = b.addInstallFile(
+            b.path(spv_path),
+            b.fmt("share/nvvk/shaders/{s}.spv", .{shader_name}),
+        );
+        install_file.step.dependOn(shader_step);
+        install_shaders_step.dependOn(&install_file.step);
+    }
+
     // Build option for static vs shared library
     const linkage = b.option(std.builtin.LinkMode, "linkage", "Library linkage (static or dynamic)") orelse .dynamic;
 

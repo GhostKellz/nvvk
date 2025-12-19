@@ -1,0 +1,50 @@
+#version 450
+
+/*
+ * Backward Warp Shader
+ *
+ * Warps current frame backward using motion vectors.
+ * Used in quality mode for bidirectional frame synthesis.
+ */
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Input frame (current)
+layout(set = 0, binding = 0) uniform sampler2D inputFrame;
+
+// Backward motion vectors (curr -> prev direction)
+layout(set = 0, binding = 1) uniform sampler2D motionVectors;
+
+// Output warped frame
+layout(set = 0, binding = 2, rgba8) uniform writeonly image2D outputFrame;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    float mvScaleX;
+    float mvScaleY;
+    float interpolation;
+    float direction;
+} pc;
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outputSize = imageSize(outputFrame);
+
+    if (pixelCoord.x >= outputSize.x || pixelCoord.y >= outputSize.y) {
+        return;
+    }
+
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(outputSize);
+
+    // Sample backward motion vector
+    vec2 mv = texture(motionVectors, uv).xy;
+
+    // Scale for backward warp (opposite direction)
+    vec2 scaledMV = mv * vec2(pc.mvScaleX, pc.mvScaleY) * (1.0 - pc.interpolation) * pc.direction;
+
+    vec2 sourceUV = uv + scaledMV / vec2(outputSize);
+
+    vec4 color = texture(inputFrame, sourceUV);
+
+    imageStore(outputFrame, pixelCoord, color);
+}

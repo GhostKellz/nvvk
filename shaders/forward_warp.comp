@@ -1,0 +1,59 @@
+#version 450
+
+/*
+ * Forward Warp Shader
+ *
+ * Warps input frame using motion vectors to synthesize intermediate frame.
+ * Uses scatter approach: each motion vector projects a source pixel to destination.
+ *
+ * Performance mode: Simple forward warp without disocclusion handling.
+ */
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Input frame
+layout(set = 0, binding = 0) uniform sampler2D inputFrame;
+
+// Motion vectors (R16G16_SNORM, S10.5 fixed point)
+layout(set = 0, binding = 1) uniform sampler2D motionVectors;
+
+// Output warped frame
+layout(set = 0, binding = 2, rgba8) uniform writeonly image2D outputFrame;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    float mvScaleX;      // Motion vector scale X (grid size compensation)
+    float mvScaleY;      // Motion vector scale Y
+    float interpolation; // Interpolation factor (0.0 = source, 1.0 = target)
+    float direction;     // Warp direction (1.0 = forward, -1.0 = backward)
+} pc;
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outputSize = imageSize(outputFrame);
+
+    // Bounds check
+    if (pixelCoord.x >= outputSize.x || pixelCoord.y >= outputSize.y) {
+        return;
+    }
+
+    // Normalized texture coordinates
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(outputSize);
+
+    // Sample motion vector (S10.5 format, need to scale)
+    vec2 mv = texture(motionVectors, uv).xy;
+
+    // Scale motion vector by interpolation factor and direction
+    // Positive direction = warp forward (prev -> curr)
+    // At interpolation = 0.5, we want to warp to midpoint
+    vec2 scaledMV = mv * vec2(pc.mvScaleX, pc.mvScaleY) * pc.interpolation * pc.direction;
+
+    // Calculate source UV (where to sample from)
+    vec2 sourceUV = uv - scaledMV / vec2(outputSize);
+
+    // Sample input frame with bilinear filtering
+    vec4 color = texture(inputFrame, sourceUV);
+
+    // Write to output
+    imageStore(outputFrame, pixelCoord, color);
+}

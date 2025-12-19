@@ -111,7 +111,7 @@ pub const LowLatencyContext = struct {
     }
 
     /// Get latency timing data for recent frames
-    pub fn getTimings(self: *LowLatencyContext, allocator: std.mem.Allocator) vk.VulkanError![]FrameTimings {
+    pub fn getTimings(self: *LowLatencyContext, allocator: std.mem.Allocator) (vk.VulkanError || std.mem.Allocator.Error)![]FrameTimings {
         const func = self.dispatch.vkGetLatencyTimingsNV orelse return vk.VulkanError.ExtensionNotPresent;
 
         // First call to get count

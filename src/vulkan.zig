@@ -103,6 +103,16 @@ pub const VkSwapchainKHR = *opaque {};
 pub const VkSemaphore_T = u64;
 pub const VkSwapchainKHR_T = u64;
 pub const VkImageView = *opaque {};
+pub const VkImage = *opaque {};
+pub const VkDeviceMemory = *opaque {};
+pub const VkPipeline = *opaque {};
+pub const VkPipelineLayout = *opaque {};
+pub const VkDescriptorPool = *opaque {};
+pub const VkDescriptorSetLayout = *opaque {};
+pub const VkDescriptorSet = *opaque {};
+pub const VkSampler = *opaque {};
+pub const VkBuffer = *opaque {};
+pub const VkCommandBuffer = *opaque {};
 
 // Basic Vulkan structures
 pub const VkOffset2D = extern struct {
@@ -336,6 +346,7 @@ pub const VkStructureType = enum(i32) {
     instance_create_info = 1,
     device_queue_create_info = 2,
     device_create_info = 3,
+    descriptor_set_layout_create_info = 32,
     // VK_NV_low_latency2
     latency_sleep_mode_info_nv = 1000505000,
     latency_sleep_info_nv = 1000505001,
@@ -354,7 +365,37 @@ pub const VkStructureType = enum(i32) {
     _,
 };
 
-pub const VkCommandBuffer = *opaque {};
+// Descriptor types
+pub const VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: u32 = 1;
+pub const VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: u32 = 3;
+
+// Shader stage flags
+pub const VK_SHADER_STAGE_COMPUTE_BIT: u32 = 0x00000020;
+
+// Image layouts
+pub const VK_IMAGE_LAYOUT_GENERAL: u32 = 1;
+pub const VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: u32 = 5;
+
+// Structure type constants
+pub const VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO: u32 = 32;
+
+/// Descriptor set layout binding
+pub const VkDescriptorSetLayoutBinding = extern struct {
+    binding: u32,
+    descriptorType: u32,
+    descriptorCount: u32,
+    stageFlags: u32,
+    pImmutableSamplers: ?*const VkSampler,
+};
+
+/// Descriptor set layout create info
+pub const VkDescriptorSetLayoutCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    bindingCount: u32,
+    pBindings: ?[*]const VkDescriptorSetLayoutBinding,
+};
 
 // =============================================================================
 // Function Pointer Types (use .c for Zig 0.16+)
@@ -374,6 +415,9 @@ pub const PFN_vkQueueNotifyOutOfBandNV = *const fn (VkQueue, *const VkOutOfBandQ
 // VK_NV_device_diagnostic_checkpoints
 pub const PFN_vkCmdSetCheckpointNV = *const fn (VkCommandBuffer, ?*const anyopaque) callconv(.c) void;
 pub const PFN_vkGetQueueCheckpointDataNV = *const fn (VkQueue, *u32, ?[*]VkCheckpointDataNV) callconv(.c) void;
+
+// Core Vulkan functions
+pub const PFN_vkCreateDescriptorSetLayout = *const fn (VkDevice, *const VkDescriptorSetLayoutCreateInfo, ?*const VkAllocationCallbacks, *VkDescriptorSetLayout) callconv(.c) i32;
 
 // =============================================================================
 // Dynamic Loader
@@ -424,6 +468,8 @@ pub const DeviceDispatch = struct {
     // VK_NV_device_diagnostic_checkpoints
     vkCmdSetCheckpointNV: ?PFN_vkCmdSetCheckpointNV = null,
     vkGetQueueCheckpointDataNV: ?PFN_vkGetQueueCheckpointDataNV = null,
+    // Core Vulkan functions
+    vkCreateDescriptorSetLayout: ?PFN_vkCreateDescriptorSetLayout = null,
 
     pub fn init(device: VkDevice, getDeviceProcAddr: PFN_vkGetDeviceProcAddr) DeviceDispatch {
         return .{
@@ -435,6 +481,7 @@ pub const DeviceDispatch = struct {
             .vkQueueNotifyOutOfBandNV = @ptrCast(getDeviceProcAddr(device, "vkQueueNotifyOutOfBandNV")),
             .vkCmdSetCheckpointNV = @ptrCast(getDeviceProcAddr(device, "vkCmdSetCheckpointNV")),
             .vkGetQueueCheckpointDataNV = @ptrCast(getDeviceProcAddr(device, "vkGetQueueCheckpointDataNV")),
+            .vkCreateDescriptorSetLayout = @ptrCast(getDeviceProcAddr(device, "vkCreateDescriptorSetLayout")),
         };
     }
 

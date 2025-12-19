@@ -395,3 +395,260 @@ export fn nvvk_get_mesh_shader_extension_name() [*:0]const u8 {
 export fn nvvk_get_ray_tracing_extension_name() [*:0]const u8 {
     return nvvk.ext_names.ray_trace;
 }
+
+// =============================================================================
+// Frame Generation C API
+// =============================================================================
+
+pub const NvvkFrameGenMode = enum(i32) {
+    off = 0,
+    performance = 1,
+    balanced = 2,
+    quality = 3,
+};
+
+pub const NvvkFrameGenStats = extern struct {
+    generated_frames: u64,
+    skipped_frames: u64,
+    avg_gen_time_us: u64,
+    confidence: f32,
+    scene_change_detected: bool,
+    _padding: [3]u8 = .{ 0, 0, 0 },
+};
+
+pub const NvvkGeneratedFrame = extern struct {
+    image_view: u64,
+    image: u64,
+    confidence: f32,
+    generation_time_us: u64,
+    frame_id: u64,
+    should_present: bool,
+    _padding: [7]u8 = .{ 0, 0, 0, 0, 0, 0, 0 },
+};
+
+const FrameGenHandle = struct {
+    ctx: nvvk.FrameGenContext,
+};
+
+/// Initialize frame generation context
+export fn nvvk_frame_gen_init(
+    device: NvvkDevice,
+    width: u32,
+    height: u32,
+    mode: NvvkFrameGenMode,
+) ?*FrameGenHandle {
+    const allocator = gpa.allocator();
+
+    const handle = allocator.create(FrameGenHandle) catch return null;
+
+    const zig_mode: nvvk.FrameGenMode = switch (mode) {
+        .off => .off,
+        .performance => .performance,
+        .balanced => .balanced,
+        .quality => .quality,
+    };
+
+    const config = nvvk.FrameGenConfig{
+        .width = width,
+        .height = height,
+        .mode = zig_mode,
+    };
+
+    const vk_device: nvvk.VkDevice = @ptrCast(device);
+    handle.ctx = nvvk.FrameGenContext.init(vk_device, config, null, null, allocator);
+
+    return handle;
+}
+
+/// Destroy frame generation context
+export fn nvvk_frame_gen_destroy(handle: ?*FrameGenHandle) void {
+    if (handle) |h| {
+        h.ctx.deinit();
+        gpa.allocator().destroy(h);
+    }
+}
+
+/// Enable or disable frame generation
+export fn nvvk_frame_gen_set_enabled(handle: ?*FrameGenHandle, enabled: bool) void {
+    if (handle) |h| {
+        h.ctx.setEnabled(enabled);
+    }
+}
+
+/// Set frame generation mode
+export fn nvvk_frame_gen_set_mode(handle: ?*FrameGenHandle, mode: NvvkFrameGenMode) void {
+    if (handle) |h| {
+        const zig_mode: nvvk.FrameGenMode = switch (mode) {
+            .off => .off,
+            .performance => .performance,
+            .balanced => .balanced,
+            .quality => .quality,
+        };
+        h.ctx.setMode(zig_mode);
+    }
+}
+
+/// Get frame generation statistics
+export fn nvvk_frame_gen_get_stats(handle: ?*const FrameGenHandle, stats: *NvvkFrameGenStats) void {
+    if (handle) |h| {
+        const s = h.ctx.getStats();
+        stats.* = .{
+            .generated_frames = s.generated_frames,
+            .skipped_frames = s.skipped_frames,
+            .avg_gen_time_us = s.avg_gen_time_us,
+            .confidence = s.confidence,
+            .scene_change_detected = s.scene_change_detected,
+        };
+    }
+}
+
+/// Get latency compensation in microseconds
+export fn nvvk_frame_gen_get_latency_compensation(handle: ?*const FrameGenHandle) u64 {
+    if (handle) |h| {
+        return h.ctx.getLatencyCompensation();
+    }
+    return 0;
+}
+
+/// Get current frame ID
+export fn nvvk_frame_gen_get_current_frame_id(handle: ?*const FrameGenHandle) u64 {
+    if (handle) |h| {
+        return h.ctx.getCurrentFrameId();
+    }
+    return 0;
+}
+
+/// Get extension name for optical flow (required for frame gen)
+export fn nvvk_get_optical_flow_extension_name() [*:0]const u8 {
+    return nvvk.optical_flow.VK_NV_OPTICAL_FLOW_EXTENSION_NAME;
+}
+
+// =============================================================================
+// Present Injection C API
+// =============================================================================
+
+pub const NvvkInjectionMode = enum(i32) {
+    disabled = 0,
+    single = 1,
+    double = 2,
+};
+
+pub const NvvkTimingMode = enum(i32) {
+    fixed = 0,
+    adaptive = 1,
+    vrr = 2,
+};
+
+pub const NvvkInjectionStats = extern struct {
+    real_frames: u64,
+    generated_frames: u64,
+    skipped_frames: u64,
+    avg_present_interval_us: u64,
+    effective_fps: f32,
+    injection_overhead_us: u64,
+    _padding: u32 = 0,
+};
+
+const PresentInjectionHandle = struct {
+    ctx: nvvk.PresentInjectionContext,
+};
+
+/// Initialize present injection context
+export fn nvvk_present_injection_init(
+    device: NvvkDevice,
+    swapchain: u64,
+    injection_mode: NvvkInjectionMode,
+    timing_mode: NvvkTimingMode,
+) ?*PresentInjectionHandle {
+    const allocator = gpa.allocator();
+
+    const handle = allocator.create(PresentInjectionHandle) catch return null;
+
+    const zig_injection_mode: nvvk.InjectionMode = switch (injection_mode) {
+        .disabled => .disabled,
+        .single => .single,
+        .double => .double,
+    };
+
+    const zig_timing_mode: nvvk.TimingMode = switch (timing_mode) {
+        .fixed => .fixed,
+        .adaptive => .adaptive,
+        .vrr => .vrr,
+    };
+
+    const config = nvvk.InjectionConfig{
+        .mode = zig_injection_mode,
+        .timing = zig_timing_mode,
+    };
+
+    const vk_device: nvvk.VkDevice = @ptrCast(device);
+    handle.ctx = nvvk.PresentInjectionContext.init(
+        vk_device,
+        swapchain,
+        null,
+        null,
+        config,
+        null,
+        allocator,
+    );
+
+    return handle;
+}
+
+/// Destroy present injection context
+export fn nvvk_present_injection_destroy(handle: ?*PresentInjectionHandle) void {
+    if (handle) |h| {
+        h.ctx.deinit();
+        gpa.allocator().destroy(h);
+    }
+}
+
+/// Enable or disable injection
+export fn nvvk_present_injection_set_enabled(handle: ?*PresentInjectionHandle, enabled: bool) void {
+    if (handle) |h| {
+        h.ctx.setEnabled(enabled);
+    }
+}
+
+/// Check if injection should occur
+export fn nvvk_present_injection_should_inject(handle: ?*const PresentInjectionHandle) bool {
+    if (handle) |h| {
+        return h.ctx.shouldInject();
+    }
+    return false;
+}
+
+/// Calculate optimal injection timing (microseconds)
+export fn nvvk_present_injection_get_timing(handle: ?*PresentInjectionHandle) u64 {
+    if (handle) |h| {
+        return h.ctx.calculateInjectionTiming();
+    }
+    return 8333; // Default ~60fps half interval
+}
+
+/// Record present time
+export fn nvvk_present_injection_record_present(handle: ?*PresentInjectionHandle, is_generated: bool) void {
+    if (handle) |h| {
+        h.ctx.recordPresentTime(is_generated);
+    }
+}
+
+/// Get injection statistics
+export fn nvvk_present_injection_get_stats(handle: ?*const PresentInjectionHandle, stats: *NvvkInjectionStats) void {
+    if (handle) |h| {
+        const s = h.ctx.getStats();
+        stats.* = .{
+            .real_frames = s.real_frames,
+            .generated_frames = s.generated_frames,
+            .skipped_frames = s.skipped_frames,
+            .avg_present_interval_us = s.avg_present_interval_us,
+            .effective_fps = s.effective_fps,
+            .injection_overhead_us = s.injection_overhead_us,
+        };
+    }
+}
+
+/// Get Vulkan layer name for frame generation
+export fn nvvk_get_layer_name() [*:0]const u8 {
+    return nvvk.present_injection.LAYER_NAME;
+}
