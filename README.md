@@ -7,7 +7,7 @@ A Zig library providing optimized NVIDIA Vulkan extension wrappers with C ABI ex
 ![Zig Version](https://img.shields.io/badge/Zig-0.16.0--dev-orange?style=flat&logo=zig&logoColor=white)
 ![Vulkan](https://img.shields.io/badge/Vulkan-1.3+-red?style=flat&logo=vulkan&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Linux-blue?style=flat&logo=linux&logoColor=white)
-![NVIDIA](https://img.shields.io/badge/NVIDIA-535%2B-76B900?style=flat&logo=nvidia&logoColor=white)
+![NVIDIA](https://img.shields.io/badge/NVIDIA-590%2B-76B900?style=flat&logo=nvidia&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
 ## Overview
@@ -17,6 +17,15 @@ nvvk exposes NVIDIA-specific Vulkan extensions that are often underutilized on L
 - **VK_NV_low_latency2** - NVIDIA Reflex integration for reduced input latency
 - **VK_NV_device_diagnostics_config** - GPU crash diagnostics and debugging
 - **VK_NV_device_diagnostic_checkpoints** - Execution checkpoints for debugging
+
+## Driver 590+ Optimizations
+
+nvvk 0.2.0 is optimized for NVIDIA 590.48.01+ drivers which include:
+- **Vulkan swapchain recreation performance** - Low latency mode remains stable during window resize/mode changes (no more stutter spikes)
+- **Better Wayland 1.20+ integration** - Full low latency support on modern Wayland compositors
+- **Improved VK_NV_low_latency2 timing** - More consistent frame pacing with Reflex enabled
+
+These improvements make nvvk's Reflex implementation production-ready for DXVK/vkd3d-proton patching.
 
 ## Architecture
 

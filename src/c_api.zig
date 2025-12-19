@@ -297,15 +297,30 @@ export fn nvvk_is_nvidia_gpu() bool {
 
 /// Get extension name for low latency
 export fn nvvk_get_low_latency_extension_name() [*:0]const u8 {
-    return nvvk.extensions.low_latency2;
+    return nvvk.ext_names.low_latency2;
 }
 
 /// Get extension name for diagnostic checkpoints
 export fn nvvk_get_diagnostic_checkpoints_extension_name() [*:0]const u8 {
-    return nvvk.extensions.diagnostic_checkpoints;
+    return nvvk.ext_names.diagnostic_checkpoints;
 }
 
 /// Get extension name for diagnostics config
 export fn nvvk_get_diagnostics_config_extension_name() [*:0]const u8 {
-    return nvvk.extensions.diagnostics_config;
+    return nvvk.ext_names.diagnostics_config;
+}
+
+/// Get extension name for memory decompression
+export fn nvvk_get_memory_decompression_extension_name() [*:0]const u8 {
+    return nvvk.ext_names.mem_decompression;
+}
+
+/// Get extension name for mesh shader
+export fn nvvk_get_mesh_shader_extension_name() [*:0]const u8 {
+    return nvvk.ext_names.mesh_shdr;
+}
+
+/// Get extension name for ray tracing
+export fn nvvk_get_ray_tracing_extension_name() [*:0]const u8 {
+    return nvvk.ext_names.ray_trace;
 }

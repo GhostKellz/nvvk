@@ -6,7 +6,7 @@
 //! - Shader debug info and error reporting
 //! - Resource tracking for debugging
 //!
-//! Requires NVIDIA driver 535+ and respective extensions.
+//! Requires NVIDIA driver 590+ and respective extensions.
 
 const std = @import("std");
 const vk = @import("vulkan.zig");

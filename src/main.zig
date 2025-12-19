@@ -11,26 +11,52 @@ pub fn main() !void {
     });
     std.debug.print("=========================================\n\n", .{});
 
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
     // Check NVIDIA GPU
     std.debug.print("NVIDIA GPU Detection:\n", .{});
     if (nvvk.isNvidiaGpu()) {
         std.debug.print("  [OK] NVIDIA GPU detected\n", .{});
 
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        defer _ = gpa.deinit();
-
         if (nvvk.getNvidiaDriverVersion(gpa.allocator())) |version| {
             defer gpa.allocator().free(version);
             std.debug.print("  Driver version: {s}\n", .{version});
+        }
+
+        // Show 590+ feature status
+        if (nvvk.getDriverVersion(gpa.allocator())) |ver| {
+            std.debug.print("\nDriver 590+ Features:\n", .{});
+            const ok = "[OK]";
+            const no = "[--]";
+            std.debug.print("  {s} Recommended version (>={s})\n", .{
+                if (ver.meetsRecommended()) ok else no,
+                nvvk.recommended_driver.string,
+            });
+            std.debug.print("  {s} Swapchain recreation fix\n", .{
+                if (ver.hasSwapchainFix()) ok else no,
+            });
+            std.debug.print("  {s} Wayland 1.20+ support\n", .{
+                if (ver.hasWayland120Support()) ok else no,
+            });
+            std.debug.print("  {s} DPI reporting fix\n", .{
+                if (ver.hasDpiFix()) ok else no,
+            });
+            std.debug.print("  {s} EGL multisample fix\n", .{
+                if (ver.hasEglMultisampleFix()) ok else no,
+            });
         }
     } else {
         std.debug.print("  [--] No NVIDIA GPU detected (or driver not loaded)\n", .{});
     }
 
     std.debug.print("\nSupported Extensions:\n", .{});
-    std.debug.print("  - {s}\n", .{nvvk.extensions.low_latency2});
-    std.debug.print("  - {s}\n", .{nvvk.extensions.diagnostic_checkpoints});
-    std.debug.print("  - {s}\n", .{nvvk.extensions.diagnostics_config});
+    std.debug.print("  - {s}\n", .{nvvk.ext_names.low_latency2});
+    std.debug.print("  - {s}\n", .{nvvk.ext_names.diagnostic_checkpoints});
+    std.debug.print("  - {s}\n", .{nvvk.ext_names.diagnostics_config});
+    std.debug.print("  - {s}\n", .{nvvk.ext_names.mem_decompression});
+    std.debug.print("  - {s}\n", .{nvvk.ext_names.mesh_shdr});
+    std.debug.print("  - {s}\n", .{nvvk.ext_names.ray_trace});
 
     std.debug.print("\nVulkan Loader:\n", .{});
     var loader = nvvk.Loader.init() catch |err| {

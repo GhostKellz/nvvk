@@ -102,6 +102,68 @@ pub const VkSwapchainKHR = *opaque {};
 // Non-dispatchable handles (64-bit)
 pub const VkSemaphore_T = u64;
 pub const VkSwapchainKHR_T = u64;
+pub const VkImageView = *opaque {};
+
+// Basic Vulkan structures
+pub const VkOffset2D = extern struct {
+    x: i32 = 0,
+    y: i32 = 0,
+};
+
+pub const VkExtent2D = extern struct {
+    width: u32 = 0,
+    height: u32 = 0,
+};
+
+pub const VkRect2D = extern struct {
+    offset: VkOffset2D = .{},
+    extent: VkExtent2D = .{},
+};
+
+// Callback function types for allocators
+pub const PFN_vkAllocationFunction = ?*const fn (
+    pUserData: ?*anyopaque,
+    size: usize,
+    alignment: usize,
+    allocationScope: i32,
+) callconv(.c) ?*anyopaque;
+
+pub const PFN_vkReallocationFunction = ?*const fn (
+    pUserData: ?*anyopaque,
+    pOriginal: ?*anyopaque,
+    size: usize,
+    alignment: usize,
+    allocationScope: i32,
+) callconv(.c) ?*anyopaque;
+
+pub const PFN_vkFreeFunction = ?*const fn (
+    pUserData: ?*anyopaque,
+    pMemory: ?*anyopaque,
+) callconv(.c) void;
+
+pub const PFN_vkInternalAllocationNotification = ?*const fn (
+    pUserData: ?*anyopaque,
+    size: usize,
+    allocationType: i32,
+    allocationScope: i32,
+) callconv(.c) void;
+
+pub const PFN_vkInternalFreeNotification = ?*const fn (
+    pUserData: ?*anyopaque,
+    size: usize,
+    allocationType: i32,
+    allocationScope: i32,
+) callconv(.c) void;
+
+/// Custom memory allocator callbacks
+pub const VkAllocationCallbacks = extern struct {
+    pUserData: ?*anyopaque = null,
+    pfnAllocation: PFN_vkAllocationFunction = null,
+    pfnReallocation: PFN_vkReallocationFunction = null,
+    pfnFree: PFN_vkFreeFunction = null,
+    pfnInternalAllocation: PFN_vkInternalAllocationNotification = null,
+    pfnInternalFree: PFN_vkInternalFreeNotification = null,
+};
 
 // =============================================================================
 // VK_NV_low_latency2 Types (Extension #506)

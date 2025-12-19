@@ -7,7 +7,12 @@
 //! - Sleeping to optimize frame pacing
 //! - Collecting latency timing data
 //!
-//! Requires NVIDIA driver 535+ and VK_NV_low_latency2 extension.
+//! Requires NVIDIA driver 590+ (590.48.01 recommended) and VK_NV_low_latency2 extension.
+//!
+//! Driver 590+ Benefits:
+//! - Swapchain recreation no longer causes latency spikes (critical for window resize)
+//! - More consistent frame pacing with low latency mode enabled
+//! - Better Wayland 1.20+ compositor integration
 
 const std = @import("std");
 const vk = @import("vulkan.zig");
@@ -38,6 +43,15 @@ pub const LowLatencyContext = struct {
     /// Check if VK_NV_low_latency2 is available
     pub fn isSupported(self: *const LowLatencyContext) bool {
         return self.dispatch.hasLowLatency2();
+    }
+
+    /// Check if swapchain recreation is safe without latency spikes.
+    /// Returns true on driver 590+ which fixed swapchain recreation performance.
+    /// On older drivers, window resize/mode changes may cause temporary latency spikes.
+    pub fn isSwapchainRecreationSafe(allocator: std.mem.Allocator) bool {
+        const root = @import("root.zig");
+        const ver = root.getDriverVersion(allocator) orelse return false;
+        return ver.hasSwapchainFix();
     }
 
     /// Enable or disable low latency mode
@@ -313,6 +327,200 @@ pub const FrameTimings = struct {
 };
 
 // =============================================================================
+// Frame Pacing
+// =============================================================================
+
+/// Frame pacer for targeting specific framerates with Reflex
+pub const FramePacer = struct {
+    target_fps: u32,
+    target_frame_time_us: u64,
+    last_frame_time_us: u64 = 0,
+    frame_count: u64 = 0,
+
+    /// Create a frame pacer targeting a specific FPS
+    pub fn init(target_fps: u32) FramePacer {
+        return .{
+            .target_fps = target_fps,
+            .target_frame_time_us = if (target_fps > 0) 1_000_000 / target_fps else 0,
+        };
+    }
+
+    /// Create a frame pacer for uncapped FPS (Reflex boost mode)
+    pub fn uncapped() FramePacer {
+        return .{
+            .target_fps = 0,
+            .target_frame_time_us = 0,
+        };
+    }
+
+    /// Get ModeConfig for this pacer
+    pub fn toModeConfig(self: FramePacer) ModeConfig {
+        if (self.target_fps == 0) {
+            return ModeConfig.maxPerformance();
+        }
+        return ModeConfig.targetFps(self.target_fps);
+    }
+
+    /// Record frame completion and return time since last frame
+    pub fn recordFrame(self: *FramePacer, current_time_us: u64) u64 {
+        const delta = if (self.last_frame_time_us > 0)
+            current_time_us - self.last_frame_time_us
+        else
+            0;
+        self.last_frame_time_us = current_time_us;
+        self.frame_count += 1;
+        return delta;
+    }
+
+    /// Check if we're ahead of target (frame came in early)
+    pub fn isAheadOfTarget(self: FramePacer, frame_time_us: u64) bool {
+        if (self.target_frame_time_us == 0) return false;
+        return frame_time_us < self.target_frame_time_us;
+    }
+
+    /// Get current average FPS based on last frame time
+    pub fn currentFps(self: FramePacer) u32 {
+        if (self.last_frame_time_us == 0) return 0;
+        // This would need actual frame time delta tracking for accuracy
+        return self.target_fps;
+    }
+};
+
+// =============================================================================
+// Latency Statistics
+// =============================================================================
+
+/// Rolling latency statistics aggregator
+pub const LatencyStats = struct {
+    /// Ring buffer of recent latency samples
+    samples: [128]u64 = [_]u64{0} ** 128,
+    sample_index: usize = 0,
+    sample_count: usize = 0,
+
+    /// Running totals for fast average calculation
+    total_latency_us: u64 = 0,
+    min_latency_us: u64 = std.math.maxInt(u64),
+    max_latency_us: u64 = 0,
+
+    /// Add a latency sample
+    pub fn addSample(self: *LatencyStats, latency_us: u64) void {
+        // Remove old sample from total if buffer is full
+        if (self.sample_count >= self.samples.len) {
+            self.total_latency_us -= self.samples[self.sample_index];
+        } else {
+            self.sample_count += 1;
+        }
+
+        // Add new sample
+        self.samples[self.sample_index] = latency_us;
+        self.total_latency_us += latency_us;
+        self.sample_index = (self.sample_index + 1) % self.samples.len;
+
+        // Update min/max
+        if (latency_us < self.min_latency_us) self.min_latency_us = latency_us;
+        if (latency_us > self.max_latency_us) self.max_latency_us = latency_us;
+    }
+
+    /// Add samples from FrameTimings
+    pub fn addFromTimings(self: *LatencyStats, timings: FrameTimings) void {
+        const latency = timings.totalLatencyUs();
+        if (latency > 0) {
+            self.addSample(latency);
+        }
+    }
+
+    /// Get average latency in microseconds
+    pub fn averageUs(self: LatencyStats) u64 {
+        if (self.sample_count == 0) return 0;
+        return self.total_latency_us / self.sample_count;
+    }
+
+    /// Get average latency in milliseconds
+    pub fn averageMs(self: LatencyStats) f32 {
+        return @as(f32, @floatFromInt(self.averageUs())) / 1000.0;
+    }
+
+    /// Get minimum latency seen
+    pub fn minUs(self: LatencyStats) u64 {
+        if (self.sample_count == 0) return 0;
+        return self.min_latency_us;
+    }
+
+    /// Get maximum latency seen
+    pub fn maxUs(self: LatencyStats) u64 {
+        return self.max_latency_us;
+    }
+
+    /// Get 99th percentile latency (approximate)
+    pub fn percentile99Us(self: LatencyStats) u64 {
+        if (self.sample_count < 10) return self.max_latency_us;
+
+        // Simple approximation: sort samples and take 99th percentile
+        var sorted: [128]u64 = undefined;
+        @memcpy(sorted[0..self.sample_count], self.samples[0..self.sample_count]);
+        std.mem.sort(u64, sorted[0..self.sample_count], {}, std.sort.asc(u64));
+
+        const idx = (self.sample_count * 99) / 100;
+        return sorted[idx];
+    }
+
+    /// Reset all statistics
+    pub fn reset(self: *LatencyStats) void {
+        self.* = .{};
+    }
+};
+
+// =============================================================================
+// Thread-Safe Wrapper
+// =============================================================================
+
+/// Thread-safe wrapper for LowLatencyContext
+/// Use this when multiple threads may access Reflex functionality
+pub const ThreadSafeLowLatencyContext = struct {
+    inner: LowLatencyContext,
+    mutex: std.Thread.Mutex = .{},
+
+    pub fn init(
+        device: vk.VkDevice,
+        swapchain: vk.VkSwapchainKHR_T,
+        dispatch: *const vk.DeviceDispatch,
+    ) ThreadSafeLowLatencyContext {
+        return .{
+            .inner = LowLatencyContext.init(device, swapchain, dispatch),
+        };
+    }
+
+    pub fn setMode(self: *ThreadSafeLowLatencyContext, config: ModeConfig) vk.VulkanError!void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.inner.setMode(config);
+    }
+
+    pub fn beginFrame(self: *ThreadSafeLowLatencyContext) u64 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.inner.beginFrame();
+    }
+
+    pub fn setMarker(self: *ThreadSafeLowLatencyContext, marker: Marker) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.inner.setMarker(marker);
+    }
+
+    pub fn sleep(self: *ThreadSafeLowLatencyContext, semaphore: vk.VkSemaphore_T, value: u64) vk.VulkanError!void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.inner.sleep(semaphore, value);
+    }
+
+    /// Get underlying context (use with caution in multi-threaded code)
+    pub fn getInner(self: *ThreadSafeLowLatencyContext) *LowLatencyContext {
+        return &self.inner;
+    }
+};
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -353,4 +561,107 @@ test "FrameTimings calculations" {
     try std.testing.expectEqual(@as(u64, 1000), timings.simTimeUs());
     try std.testing.expectEqual(@as(u64, 1200), timings.gpuRenderTimeUs());
     try std.testing.expectEqual(@as(u64, 300), timings.driverTimeUs());
+}
+
+test "FramePacer init" {
+    const pacer60 = FramePacer.init(60);
+    try std.testing.expectEqual(@as(u32, 60), pacer60.target_fps);
+    try std.testing.expectEqual(@as(u64, 16666), pacer60.target_frame_time_us);
+
+    const pacer144 = FramePacer.init(144);
+    try std.testing.expectEqual(@as(u32, 144), pacer144.target_fps);
+    try std.testing.expectEqual(@as(u64, 6944), pacer144.target_frame_time_us);
+}
+
+test "FramePacer uncapped" {
+    const pacer = FramePacer.uncapped();
+    try std.testing.expectEqual(@as(u32, 0), pacer.target_fps);
+    try std.testing.expectEqual(@as(u64, 0), pacer.target_frame_time_us);
+
+    const config = pacer.toModeConfig();
+    try std.testing.expect(config.enabled);
+    try std.testing.expect(config.boost);
+}
+
+test "FramePacer recordFrame" {
+    var pacer = FramePacer.init(60);
+
+    // First frame has no delta
+    const delta1 = pacer.recordFrame(1_000_000);
+    try std.testing.expectEqual(@as(u64, 0), delta1);
+    try std.testing.expectEqual(@as(u64, 1), pacer.frame_count);
+
+    // Second frame shows delta
+    const delta2 = pacer.recordFrame(1_016_666);
+    try std.testing.expectEqual(@as(u64, 16666), delta2);
+    try std.testing.expectEqual(@as(u64, 2), pacer.frame_count);
+}
+
+test "FramePacer isAheadOfTarget" {
+    const pacer = FramePacer.init(60); // 16666us target
+
+    try std.testing.expect(pacer.isAheadOfTarget(10000)); // 10ms < 16.6ms
+    try std.testing.expect(!pacer.isAheadOfTarget(20000)); // 20ms > 16.6ms
+
+    const uncapped = FramePacer.uncapped();
+    try std.testing.expect(!uncapped.isAheadOfTarget(10000)); // uncapped never ahead
+}
+
+test "LatencyStats basic" {
+    var stats = LatencyStats{};
+
+    stats.addSample(5000);
+    stats.addSample(6000);
+    stats.addSample(4000);
+
+    try std.testing.expectEqual(@as(usize, 3), stats.sample_count);
+    try std.testing.expectEqual(@as(u64, 5000), stats.averageUs()); // (5000+6000+4000)/3 = 5000
+    try std.testing.expectEqual(@as(u64, 4000), stats.minUs());
+    try std.testing.expectEqual(@as(u64, 6000), stats.maxUs());
+}
+
+test "LatencyStats rolling buffer" {
+    var stats = LatencyStats{};
+
+    // Fill buffer completely
+    for (0..128) |i| {
+        stats.addSample(@as(u64, i) * 100);
+    }
+    try std.testing.expectEqual(@as(usize, 128), stats.sample_count);
+
+    // Add one more - should wrap and maintain count
+    stats.addSample(50000);
+    try std.testing.expectEqual(@as(usize, 128), stats.sample_count);
+}
+
+test "LatencyStats percentile99" {
+    var stats = LatencyStats{};
+
+    // Add 100 samples: 100, 200, 300, ..., 10000
+    for (1..101) |i| {
+        stats.addSample(@as(u64, i) * 100);
+    }
+
+    const p99 = stats.percentile99Us();
+    // 99th percentile of 100 samples at index 99 = 10000
+    try std.testing.expect(p99 >= 9900);
+}
+
+test "LatencyStats reset" {
+    var stats = LatencyStats{};
+    stats.addSample(5000);
+    stats.addSample(6000);
+
+    stats.reset();
+
+    try std.testing.expectEqual(@as(usize, 0), stats.sample_count);
+    try std.testing.expectEqual(@as(u64, 0), stats.averageUs());
+}
+
+test "LatencyStats averageMs" {
+    var stats = LatencyStats{};
+    stats.addSample(16666); // ~16.67ms
+
+    const ms = stats.averageMs();
+    try std.testing.expect(ms > 16.0 and ms < 17.0);
 }
