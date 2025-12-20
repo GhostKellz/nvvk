@@ -53,6 +53,15 @@ pub fn build(b: *std.Build) void {
     const linkage = b.option(std.builtin.LinkMode, "linkage", "Library linkage (static or dynamic)") orelse .dynamic;
 
     // =========================================================================
+    // Dependencies
+    // =========================================================================
+    const nvsync_dep = b.dependency("nvsync", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const nvsync_mod = nvsync_dep.module("nvsync");
+
+    // =========================================================================
     // Core nvvk module (Zig API)
     // =========================================================================
     const nvvk_mod = b.addModule("nvvk", .{
@@ -60,6 +69,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .link_libc = true, // Required for DlDynLib
+        .imports = &.{
+            .{ .name = "nvsync", .module = nvsync_mod },
+        },
     });
 
     // =========================================================================

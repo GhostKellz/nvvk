@@ -53,6 +53,9 @@ pub const frame_synthesis = @import("frame_synthesis.zig");
 pub const frame_generation = @import("frame_generation.zig");
 pub const present_injection = @import("present_injection.zig");
 
+// VRR integration (via nvsync)
+pub const vrr = @import("vrr.zig");
+
 // Re-export commonly used types
 pub const VkResult = vulkan.VkResult;
 pub const VulkanError = vulkan.VulkanError;
@@ -123,10 +126,16 @@ pub const InjectionMode = present_injection.InjectionMode;
 pub const TimingMode = present_injection.TimingMode;
 pub const InjectionStats = present_injection.InjectionStats;
 
+// VRR exports
+pub const VrrConfig = vrr.VrrConfig;
+pub const VrrSource = vrr.VrrSource;
+pub const VrrStatus = vrr.VrrStatus;
+pub const LfcState = vrr.LfcState;
+
 /// Library version
 pub const version = std.SemanticVersion{
     .major = 0,
-    .minor = 3,
+    .minor = 4,
     .patch = 0,
 };
 
@@ -274,7 +283,7 @@ pub const ext_names = struct {
 
 test "version" {
     try std.testing.expectEqual(@as(u8, 0), version.major);
-    try std.testing.expectEqual(@as(u8, 3), version.minor);
+    try std.testing.expectEqual(@as(u8, 4), version.minor);
     try std.testing.expectEqual(@as(u8, 0), version.patch);
 }
 

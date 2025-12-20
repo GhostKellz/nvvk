@@ -15,6 +15,7 @@ const std = @import("std");
 const vk = @import("vulkan.zig");
 const frame_generation = @import("frame_generation.zig");
 const low_latency = @import("low_latency.zig");
+const vrr = @import("vrr.zig");
 
 /// Get current time in microseconds using monotonic clock
 fn getTimeMicros() u64 {
@@ -82,10 +83,32 @@ pub const InjectionConfig = struct {
     min_confidence: f32 = 0.5,
     /// Enable Reflex integration for latency compensation
     reflex_integration: bool = true,
-    /// VRR range minimum (Hz)
-    vrr_min_hz: f32 = 40.0,
-    /// VRR range maximum (Hz)
-    vrr_max_hz: f32 = 144.0,
+    /// VRR configuration (from nvsync detection)
+    vrr_config: ?vrr.VrrConfig = null,
+
+    /// Get VRR min Hz (from config or default)
+    pub fn vrrMinHz(self: InjectionConfig) f32 {
+        if (self.vrr_config) |cfg| {
+            return @floatFromInt(cfg.min_hz);
+        }
+        return 40.0;
+    }
+
+    /// Get VRR max Hz (from config or default)
+    pub fn vrrMaxHz(self: InjectionConfig) f32 {
+        if (self.vrr_config) |cfg| {
+            return @floatFromInt(cfg.max_hz);
+        }
+        return 144.0;
+    }
+
+    /// Check if LFC is supported
+    pub fn hasLfc(self: InjectionConfig) bool {
+        if (self.vrr_config) |cfg| {
+            return cfg.lfc_supported;
+        }
+        return false;
+    }
 };
 
 /// Present injection context
@@ -108,6 +131,10 @@ pub const PresentInjectionContext = struct {
     last_present_time_us: u64,
     present_times: [16]u64, // Ring buffer for timing
     present_time_idx: u8,
+    frame_number: u64,
+
+    // LFC state tracking
+    lfc_state: vrr.LfcState,
 
     // Statistics
     stats: InjectionStats,
@@ -139,6 +166,8 @@ pub const PresentInjectionContext = struct {
             .last_present_time_us = 0,
             .present_times = std.mem.zeroes([16]u64),
             .present_time_idx = 0,
+            .frame_number = 0,
+            .lfc_state = .{},
             .stats = .{},
             .dispatch = dispatch,
             .original_queue_present = null,
@@ -160,6 +189,9 @@ pub const PresentInjectionContext = struct {
     pub fn shouldInject(self: *const PresentInjectionContext) bool {
         if (!self.enabled) return false;
 
+        // Don't inject during LFC - display driver handles frame doubling
+        if (self.lfc_state.shouldPauseInjection()) return false;
+
         // Check frame generation context
         if (self.frame_gen) |fg| {
             const stats = fg.getStats();
@@ -170,10 +202,33 @@ pub const PresentInjectionContext = struct {
         return false;
     }
 
+    /// Update LFC state based on current FPS
+    pub fn updateLfcState(self: *PresentInjectionContext) void {
+        if (self.config.vrr_config) |vrr_cfg| {
+            const current_fps: u32 = if (self.stats.effective_fps > 0)
+                @intFromFloat(self.stats.effective_fps)
+            else
+                60;
+            self.lfc_state.update(current_fps, vrr_cfg, self.frame_number);
+        }
+    }
+
+    /// Check if currently in LFC mode
+    pub fn isLfcActive(self: *const PresentInjectionContext) bool {
+        return self.lfc_state.active;
+    }
+
+    /// Set VRR configuration (can be called after initialization)
+    pub fn setVrrConfig(self: *PresentInjectionContext, vrr_cfg: vrr.VrrConfig) void {
+        self.config.vrr_config = vrr_cfg;
+        if (self.config.timing == .adaptive and vrr_cfg.enabled) {
+            // Auto-switch to VRR timing mode when VRR is detected and enabled
+            self.config.timing = .vrr;
+        }
+    }
+
     /// Calculate optimal injection timing
     pub fn calculateInjectionTiming(self: *PresentInjectionContext) u64 {
-        const now = getTimeMicros();
-
         switch (self.config.timing) {
             .fixed => {
                 // Fixed timing: half of target frame time
@@ -189,26 +244,32 @@ pub const PresentInjectionContext = struct {
                 return 8333;
             },
             .vrr => {
-                // VRR: constrained to VRR range
+                // VRR: use VrrConfig for timing calculation
+                if (self.config.vrr_config) |vrr_cfg| {
+                    const avg_interval = if (self.stats.avg_present_interval_us > 0)
+                        self.stats.avg_present_interval_us
+                    else
+                        16667;
+
+                    return vrr_cfg.calculateInjectionInterval(avg_interval);
+                }
+
+                // Fallback to default VRR range
                 const avg_interval = if (self.stats.avg_present_interval_us > 0)
                     self.stats.avg_present_interval_us
                 else
                     16667;
 
-                const max_interval_us = @as(u64, @intFromFloat(1_000_000.0 / self.config.vrr_min_hz));
-                const min_interval_us = @as(u64, @intFromFloat(1_000_000.0 / self.config.vrr_max_hz));
+                const max_interval_us = @as(u64, @intFromFloat(1_000_000.0 / self.config.vrrMinHz()));
+                const min_interval_us = @as(u64, @intFromFloat(1_000_000.0 / self.config.vrrMaxHz()));
 
-                const injection_interval = std.math.clamp(
+                return std.math.clamp(
                     avg_interval / 2,
                     min_interval_us / 2,
                     max_interval_us / 2,
                 );
-
-                return injection_interval;
             },
         }
-
-        _ = now;
     }
 
     /// Record present timing
@@ -242,6 +303,10 @@ pub const PresentInjectionContext = struct {
             self.stats.generated_frames += 1;
         } else {
             self.stats.real_frames += 1;
+            self.frame_number += 1;
+
+            // Update LFC state after each real frame
+            self.updateLfcState();
         }
     }
 
@@ -305,6 +370,25 @@ test "InjectionConfig defaults" {
     try std.testing.expectEqual(TimingMode.adaptive, config.timing);
     try std.testing.expectApproxEqRel(@as(f32, 60.0), config.target_fps, 0.001);
     try std.testing.expect(config.reflex_integration);
+    try std.testing.expect(config.vrr_config == null);
+    try std.testing.expectApproxEqRel(@as(f32, 40.0), config.vrrMinHz(), 0.001);
+    try std.testing.expectApproxEqRel(@as(f32, 144.0), config.vrrMaxHz(), 0.001);
+}
+
+test "InjectionConfig with VrrConfig" {
+    const vrr_cfg = vrr.VrrConfig{
+        .min_hz = 48,
+        .max_hz = 165,
+        .lfc_supported = true,
+        .source = .drm,
+        .enabled = true,
+    };
+    const config = InjectionConfig{
+        .vrr_config = vrr_cfg,
+    };
+    try std.testing.expectApproxEqRel(@as(f32, 48.0), config.vrrMinHz(), 0.001);
+    try std.testing.expectApproxEqRel(@as(f32, 165.0), config.vrrMaxHz(), 0.001);
+    try std.testing.expect(config.hasLfc());
 }
 
 test "InjectionStats defaults" {
