@@ -34,7 +34,7 @@
     .dependencies = .{
         // nvsync - VRR/G-Sync detection for frame pacing
         .nvsync = .{
-            .path = "../nvsync",
+            .path = "https://github.com/ghostkellz/nvsync/archive/main.tar.gz",
         },
     },
     // Specifies the set of files and directories that are included in this package.
