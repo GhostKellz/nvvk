@@ -373,11 +373,42 @@ pub const VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: u32 = 3;
 pub const VK_SHADER_STAGE_COMPUTE_BIT: u32 = 0x00000020;
 
 // Image layouts
+pub const VK_IMAGE_LAYOUT_UNDEFINED: u32 = 0;
 pub const VK_IMAGE_LAYOUT_GENERAL: u32 = 1;
 pub const VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: u32 = 5;
 
 // Structure type constants
 pub const VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO: u32 = 32;
+pub const VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO: u32 = 30;
+pub const VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO: u32 = 16;
+pub const VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO: u32 = 29;
+pub const VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO: u32 = 18;
+pub const VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO: u32 = 14;
+pub const VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO: u32 = 15;
+pub const VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO: u32 = 5;
+pub const VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO: u32 = 33;
+pub const VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO: u32 = 34;
+pub const VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET: u32 = 35;
+pub const VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER: u32 = 45;
+
+// Image types
+pub const VK_IMAGE_TYPE_2D: u32 = 1;
+pub const VK_IMAGE_VIEW_TYPE_2D: u32 = 1;
+pub const VK_FORMAT_R8G8B8A8_UNORM: u32 = 37;
+pub const VK_FORMAT_R16G16_SFLOAT: u32 = 83; // Motion vectors
+pub const VK_SAMPLE_COUNT_1_BIT: u32 = 1;
+pub const VK_IMAGE_TILING_OPTIMAL: u32 = 0;
+pub const VK_IMAGE_USAGE_STORAGE_BIT: u32 = 0x00000008;
+pub const VK_IMAGE_USAGE_SAMPLED_BIT: u32 = 0x00000004;
+pub const VK_IMAGE_USAGE_TRANSFER_SRC_BIT: u32 = 0x00000001;
+pub const VK_IMAGE_USAGE_TRANSFER_DST_BIT: u32 = 0x00000002;
+pub const VK_SHARING_MODE_EXCLUSIVE: u32 = 0;
+pub const VK_IMAGE_ASPECT_COLOR_BIT: u32 = 1;
+pub const VK_COMPONENT_SWIZZLE_IDENTITY: u32 = 0;
+pub const VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT: u32 = 0x00000001;
+pub const VK_PIPELINE_BIND_POINT_COMPUTE: u32 = 1;
+pub const VK_ACCESS_SHADER_READ_BIT: u32 = 0x00000020;
+pub const VK_ACCESS_SHADER_WRITE_BIT: u32 = 0x00000040;
 
 /// Descriptor set layout binding
 pub const VkDescriptorSetLayoutBinding = extern struct {
@@ -396,6 +427,219 @@ pub const VkDescriptorSetLayoutCreateInfo = extern struct {
     bindingCount: u32,
     pBindings: ?[*]const VkDescriptorSetLayoutBinding,
 };
+
+/// Push constant range
+pub const VkPushConstantRange = extern struct {
+    stageFlags: u32,
+    offset: u32,
+    size: u32,
+};
+
+/// Pipeline layout create info
+pub const VkPipelineLayoutCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    setLayoutCount: u32 = 0,
+    pSetLayouts: ?[*]const VkDescriptorSetLayout = null,
+    pushConstantRangeCount: u32 = 0,
+    pPushConstantRanges: ?[*]const VkPushConstantRange = null,
+};
+
+/// Shader module create info
+pub const VkShaderModuleCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    codeSize: usize,
+    pCode: [*]const u32,
+};
+
+/// Pipeline shader stage create info
+pub const VkPipelineShaderStageCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    stage: u32,
+    module: VkShaderModule,
+    pName: [*:0]const u8,
+    pSpecializationInfo: ?*const anyopaque = null,
+};
+
+/// Compute pipeline create info
+pub const VkComputePipelineCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    stage: VkPipelineShaderStageCreateInfo,
+    layout: VkPipelineLayout,
+    basePipelineHandle: ?VkPipeline = null,
+    basePipelineIndex: i32 = -1,
+};
+
+/// Extent 3D
+pub const VkExtent3D = extern struct {
+    width: u32,
+    height: u32,
+    depth: u32,
+};
+
+/// Image create info
+pub const VkImageCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    imageType: u32,
+    format: u32,
+    extent: VkExtent3D,
+    mipLevels: u32,
+    arrayLayers: u32,
+    samples: u32,
+    tiling: u32,
+    usage: u32,
+    sharingMode: u32,
+    queueFamilyIndexCount: u32 = 0,
+    pQueueFamilyIndices: ?[*]const u32 = null,
+    initialLayout: u32,
+};
+
+/// Component mapping
+pub const VkComponentMapping = extern struct {
+    r: u32 = VK_COMPONENT_SWIZZLE_IDENTITY,
+    g: u32 = VK_COMPONENT_SWIZZLE_IDENTITY,
+    b: u32 = VK_COMPONENT_SWIZZLE_IDENTITY,
+    a: u32 = VK_COMPONENT_SWIZZLE_IDENTITY,
+};
+
+/// Image subresource range
+pub const VkImageSubresourceRange = extern struct {
+    aspectMask: u32,
+    baseMipLevel: u32,
+    levelCount: u32,
+    baseArrayLayer: u32,
+    layerCount: u32,
+};
+
+/// Image view create info
+pub const VkImageViewCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    image: VkImage,
+    viewType: u32,
+    format: u32,
+    components: VkComponentMapping = .{},
+    subresourceRange: VkImageSubresourceRange,
+};
+
+/// Memory requirements
+pub const VkMemoryRequirements = extern struct {
+    size: u64,
+    alignment: u64,
+    memoryTypeBits: u32,
+};
+
+/// Memory allocate info
+pub const VkMemoryAllocateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    pNext: ?*const anyopaque = null,
+    allocationSize: u64,
+    memoryTypeIndex: u32,
+};
+
+/// Memory type
+pub const VkMemoryType = extern struct {
+    propertyFlags: u32,
+    heapIndex: u32,
+};
+
+/// Memory heap
+pub const VkMemoryHeap = extern struct {
+    size: u64,
+    flags: u32,
+};
+
+/// Physical device memory properties
+pub const VkPhysicalDeviceMemoryProperties = extern struct {
+    memoryTypeCount: u32,
+    memoryTypes: [32]VkMemoryType,
+    memoryHeapCount: u32,
+    memoryHeaps: [16]VkMemoryHeap,
+};
+
+/// Descriptor pool size
+pub const VkDescriptorPoolSize = extern struct {
+    descriptorType: u32,
+    descriptorCount: u32,
+};
+
+/// Descriptor pool create info
+pub const VkDescriptorPoolCreateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    maxSets: u32,
+    poolSizeCount: u32,
+    pPoolSizes: [*]const VkDescriptorPoolSize,
+};
+
+/// Descriptor set allocate info
+pub const VkDescriptorSetAllocateInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+    pNext: ?*const anyopaque = null,
+    descriptorPool: VkDescriptorPool,
+    descriptorSetCount: u32,
+    pSetLayouts: [*]const VkDescriptorSetLayout,
+};
+
+/// Descriptor image info
+pub const VkDescriptorImageInfo = extern struct {
+    sampler: ?VkSampler = null,
+    imageView: VkImageView,
+    imageLayout: u32,
+};
+
+/// Write descriptor set
+pub const VkWriteDescriptorSet = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+    pNext: ?*const anyopaque = null,
+    dstSet: VkDescriptorSet,
+    dstBinding: u32,
+    dstArrayElement: u32 = 0,
+    descriptorCount: u32,
+    descriptorType: u32,
+    pImageInfo: ?[*]const VkDescriptorImageInfo = null,
+    pBufferInfo: ?*const anyopaque = null,
+    pTexelBufferView: ?*const anyopaque = null,
+};
+
+/// Image subresource layers
+pub const VkImageSubresourceLayers = extern struct {
+    aspectMask: u32,
+    mipLevel: u32,
+    baseArrayLayer: u32,
+    layerCount: u32,
+};
+
+/// Image memory barrier
+pub const VkImageMemoryBarrier = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    pNext: ?*const anyopaque = null,
+    srcAccessMask: u32,
+    dstAccessMask: u32,
+    oldLayout: u32,
+    newLayout: u32,
+    srcQueueFamilyIndex: u32 = 0xFFFFFFFF, // VK_QUEUE_FAMILY_IGNORED
+    dstQueueFamilyIndex: u32 = 0xFFFFFFFF,
+    image: VkImage,
+    subresourceRange: VkImageSubresourceRange,
+};
+
+/// Shader module handle
+pub const VkShaderModule = *opaque {};
+
+/// Pipeline cache handle (optional)
+pub const VkPipelineCache = ?*opaque {};
 
 // =============================================================================
 // Function Pointer Types (use .c for Zig 0.16+)
@@ -417,7 +661,47 @@ pub const PFN_vkCmdSetCheckpointNV = *const fn (VkCommandBuffer, ?*const anyopaq
 pub const PFN_vkGetQueueCheckpointDataNV = *const fn (VkQueue, *u32, ?[*]VkCheckpointDataNV) callconv(.c) void;
 
 // Core Vulkan functions
-pub const PFN_vkCreateDescriptorSetLayout = *const fn (VkDevice, *const VkDescriptorSetLayoutCreateInfo, ?*const VkAllocationCallbacks, *VkDescriptorSetLayout) callconv(.c) i32;
+pub const PFN_vkCreateDescriptorSetLayout = *const fn (VkDevice, *const VkDescriptorSetLayoutCreateInfo, ?*const VkAllocationCallbacks, *VkDescriptorSetLayout) callconv(.c) VkResult;
+pub const PFN_vkDestroyDescriptorSetLayout = *const fn (VkDevice, VkDescriptorSetLayout, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreatePipelineLayout = *const fn (VkDevice, *const VkPipelineLayoutCreateInfo, ?*const VkAllocationCallbacks, *VkPipelineLayout) callconv(.c) VkResult;
+pub const PFN_vkDestroyPipelineLayout = *const fn (VkDevice, VkPipelineLayout, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateShaderModule = *const fn (VkDevice, *const VkShaderModuleCreateInfo, ?*const VkAllocationCallbacks, *VkShaderModule) callconv(.c) VkResult;
+pub const PFN_vkDestroyShaderModule = *const fn (VkDevice, VkShaderModule, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateComputePipelines = *const fn (VkDevice, VkPipelineCache, u32, [*]const VkComputePipelineCreateInfo, ?*const VkAllocationCallbacks, [*]VkPipeline) callconv(.c) VkResult;
+pub const PFN_vkDestroyPipeline = *const fn (VkDevice, VkPipeline, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateImage = *const fn (VkDevice, *const VkImageCreateInfo, ?*const VkAllocationCallbacks, *VkImage) callconv(.c) VkResult;
+pub const PFN_vkDestroyImage = *const fn (VkDevice, VkImage, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkGetImageMemoryRequirements = *const fn (VkDevice, VkImage, *VkMemoryRequirements) callconv(.c) void;
+pub const PFN_vkAllocateMemory = *const fn (VkDevice, *const VkMemoryAllocateInfo, ?*const VkAllocationCallbacks, *VkDeviceMemory) callconv(.c) VkResult;
+pub const PFN_vkFreeMemory = *const fn (VkDevice, VkDeviceMemory, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkBindImageMemory = *const fn (VkDevice, VkImage, VkDeviceMemory, u64) callconv(.c) VkResult;
+pub const PFN_vkCreateImageView = *const fn (VkDevice, *const VkImageViewCreateInfo, ?*const VkAllocationCallbacks, *VkImageView) callconv(.c) VkResult;
+pub const PFN_vkDestroyImageView = *const fn (VkDevice, VkImageView, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkCreateDescriptorPool = *const fn (VkDevice, *const VkDescriptorPoolCreateInfo, ?*const VkAllocationCallbacks, *VkDescriptorPool) callconv(.c) VkResult;
+pub const PFN_vkDestroyDescriptorPool = *const fn (VkDevice, VkDescriptorPool, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkAllocateDescriptorSets = *const fn (VkDevice, *const VkDescriptorSetAllocateInfo, *VkDescriptorSet) callconv(.c) VkResult;
+/// Copy descriptor set structure (stub for now)
+pub const VkCopyDescriptorSet = extern struct {
+    sType: u32 = 36, // VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET
+    pNext: ?*const anyopaque = null,
+    srcSet: VkDescriptorSet,
+    srcBinding: u32,
+    srcArrayElement: u32,
+    dstSet: VkDescriptorSet,
+    dstBinding: u32,
+    dstArrayElement: u32,
+    descriptorCount: u32,
+};
+
+pub const PFN_vkUpdateDescriptorSets = *const fn (VkDevice, u32, [*]const VkWriteDescriptorSet, u32, ?[*]const VkCopyDescriptorSet) callconv(.c) void;
+pub const PFN_vkGetPhysicalDeviceMemoryProperties = *const fn (VkPhysicalDevice, *VkPhysicalDeviceMemoryProperties) callconv(.c) void;
+
+// Command buffer functions
+pub const PFN_vkCmdBindPipeline = *const fn (VkCommandBuffer, u32, VkPipeline) callconv(.c) void;
+pub const PFN_vkCmdBindDescriptorSets = *const fn (VkCommandBuffer, u32, VkPipelineLayout, u32, u32, [*]const VkDescriptorSet, u32, ?[*]const u32) callconv(.c) void;
+pub const PFN_vkCmdPushConstants = *const fn (VkCommandBuffer, VkPipelineLayout, u32, u32, u32, *const anyopaque) callconv(.c) void;
+pub const PFN_vkCmdDispatch = *const fn (VkCommandBuffer, u32, u32, u32) callconv(.c) void;
+pub const PFN_vkCmdPipelineBarrier = *const fn (VkCommandBuffer, u32, u32, u32, u32, ?*const anyopaque, u32, ?*const anyopaque, u32, ?[*]const VkImageMemoryBarrier) callconv(.c) void;
 
 // =============================================================================
 // Dynamic Loader
@@ -456,6 +740,19 @@ pub const Loader = struct {
     }
 };
 
+/// Instance-level function dispatch table
+pub const InstanceDispatch = struct {
+    instance: VkInstance,
+    vkGetPhysicalDeviceMemoryProperties: ?PFN_vkGetPhysicalDeviceMemoryProperties = null,
+
+    pub fn init(instance: VkInstance, loader: *const Loader) InstanceDispatch {
+        return .{
+            .instance = instance,
+            .vkGetPhysicalDeviceMemoryProperties = @ptrCast(loader.getInstanceProcAddr(instance, "vkGetPhysicalDeviceMemoryProperties")),
+        };
+    }
+};
+
 /// Device-level function dispatch table for NVIDIA extensions
 pub const DeviceDispatch = struct {
     device: VkDevice,
@@ -470,10 +767,36 @@ pub const DeviceDispatch = struct {
     vkGetQueueCheckpointDataNV: ?PFN_vkGetQueueCheckpointDataNV = null,
     // Core Vulkan functions
     vkCreateDescriptorSetLayout: ?PFN_vkCreateDescriptorSetLayout = null,
+    vkDestroyDescriptorSetLayout: ?PFN_vkDestroyDescriptorSetLayout = null,
+    vkCreatePipelineLayout: ?PFN_vkCreatePipelineLayout = null,
+    vkDestroyPipelineLayout: ?PFN_vkDestroyPipelineLayout = null,
+    vkCreateShaderModule: ?PFN_vkCreateShaderModule = null,
+    vkDestroyShaderModule: ?PFN_vkDestroyShaderModule = null,
+    vkCreateComputePipelines: ?PFN_vkCreateComputePipelines = null,
+    vkDestroyPipeline: ?PFN_vkDestroyPipeline = null,
+    vkCreateImage: ?PFN_vkCreateImage = null,
+    vkDestroyImage: ?PFN_vkDestroyImage = null,
+    vkGetImageMemoryRequirements: ?PFN_vkGetImageMemoryRequirements = null,
+    vkAllocateMemory: ?PFN_vkAllocateMemory = null,
+    vkFreeMemory: ?PFN_vkFreeMemory = null,
+    vkBindImageMemory: ?PFN_vkBindImageMemory = null,
+    vkCreateImageView: ?PFN_vkCreateImageView = null,
+    vkDestroyImageView: ?PFN_vkDestroyImageView = null,
+    vkCreateDescriptorPool: ?PFN_vkCreateDescriptorPool = null,
+    vkDestroyDescriptorPool: ?PFN_vkDestroyDescriptorPool = null,
+    vkAllocateDescriptorSets: ?PFN_vkAllocateDescriptorSets = null,
+    vkUpdateDescriptorSets: ?PFN_vkUpdateDescriptorSets = null,
+    // Command buffer functions
+    vkCmdBindPipeline: ?PFN_vkCmdBindPipeline = null,
+    vkCmdBindDescriptorSets: ?PFN_vkCmdBindDescriptorSets = null,
+    vkCmdPushConstants: ?PFN_vkCmdPushConstants = null,
+    vkCmdDispatch: ?PFN_vkCmdDispatch = null,
+    vkCmdPipelineBarrier: ?PFN_vkCmdPipelineBarrier = null,
 
     pub fn init(device: VkDevice, getDeviceProcAddr: PFN_vkGetDeviceProcAddr) DeviceDispatch {
         return .{
             .device = device,
+            // NVIDIA extensions
             .vkSetLatencySleepModeNV = @ptrCast(getDeviceProcAddr(device, "vkSetLatencySleepModeNV")),
             .vkLatencySleepNV = @ptrCast(getDeviceProcAddr(device, "vkLatencySleepNV")),
             .vkSetLatencyMarkerNV = @ptrCast(getDeviceProcAddr(device, "vkSetLatencyMarkerNV")),
@@ -481,7 +804,33 @@ pub const DeviceDispatch = struct {
             .vkQueueNotifyOutOfBandNV = @ptrCast(getDeviceProcAddr(device, "vkQueueNotifyOutOfBandNV")),
             .vkCmdSetCheckpointNV = @ptrCast(getDeviceProcAddr(device, "vkCmdSetCheckpointNV")),
             .vkGetQueueCheckpointDataNV = @ptrCast(getDeviceProcAddr(device, "vkGetQueueCheckpointDataNV")),
+            // Core Vulkan
             .vkCreateDescriptorSetLayout = @ptrCast(getDeviceProcAddr(device, "vkCreateDescriptorSetLayout")),
+            .vkDestroyDescriptorSetLayout = @ptrCast(getDeviceProcAddr(device, "vkDestroyDescriptorSetLayout")),
+            .vkCreatePipelineLayout = @ptrCast(getDeviceProcAddr(device, "vkCreatePipelineLayout")),
+            .vkDestroyPipelineLayout = @ptrCast(getDeviceProcAddr(device, "vkDestroyPipelineLayout")),
+            .vkCreateShaderModule = @ptrCast(getDeviceProcAddr(device, "vkCreateShaderModule")),
+            .vkDestroyShaderModule = @ptrCast(getDeviceProcAddr(device, "vkDestroyShaderModule")),
+            .vkCreateComputePipelines = @ptrCast(getDeviceProcAddr(device, "vkCreateComputePipelines")),
+            .vkDestroyPipeline = @ptrCast(getDeviceProcAddr(device, "vkDestroyPipeline")),
+            .vkCreateImage = @ptrCast(getDeviceProcAddr(device, "vkCreateImage")),
+            .vkDestroyImage = @ptrCast(getDeviceProcAddr(device, "vkDestroyImage")),
+            .vkGetImageMemoryRequirements = @ptrCast(getDeviceProcAddr(device, "vkGetImageMemoryRequirements")),
+            .vkAllocateMemory = @ptrCast(getDeviceProcAddr(device, "vkAllocateMemory")),
+            .vkFreeMemory = @ptrCast(getDeviceProcAddr(device, "vkFreeMemory")),
+            .vkBindImageMemory = @ptrCast(getDeviceProcAddr(device, "vkBindImageMemory")),
+            .vkCreateImageView = @ptrCast(getDeviceProcAddr(device, "vkCreateImageView")),
+            .vkDestroyImageView = @ptrCast(getDeviceProcAddr(device, "vkDestroyImageView")),
+            .vkCreateDescriptorPool = @ptrCast(getDeviceProcAddr(device, "vkCreateDescriptorPool")),
+            .vkDestroyDescriptorPool = @ptrCast(getDeviceProcAddr(device, "vkDestroyDescriptorPool")),
+            .vkAllocateDescriptorSets = @ptrCast(getDeviceProcAddr(device, "vkAllocateDescriptorSets")),
+            .vkUpdateDescriptorSets = @ptrCast(getDeviceProcAddr(device, "vkUpdateDescriptorSets")),
+            // Command buffer
+            .vkCmdBindPipeline = @ptrCast(getDeviceProcAddr(device, "vkCmdBindPipeline")),
+            .vkCmdBindDescriptorSets = @ptrCast(getDeviceProcAddr(device, "vkCmdBindDescriptorSets")),
+            .vkCmdPushConstants = @ptrCast(getDeviceProcAddr(device, "vkCmdPushConstants")),
+            .vkCmdDispatch = @ptrCast(getDeviceProcAddr(device, "vkCmdDispatch")),
+            .vkCmdPipelineBarrier = @ptrCast(getDeviceProcAddr(device, "vkCmdPipelineBarrier")),
         };
     }
 
@@ -495,6 +844,12 @@ pub const DeviceDispatch = struct {
     pub fn hasDiagnosticCheckpoints(self: *const DeviceDispatch) bool {
         return self.vkCmdSetCheckpointNV != null and
             self.vkGetQueueCheckpointDataNV != null;
+    }
+
+    pub fn hasComputePipelines(self: *const DeviceDispatch) bool {
+        return self.vkCreateComputePipelines != null and
+            self.vkCreateShaderModule != null and
+            self.vkCmdDispatch != null;
     }
 };
 

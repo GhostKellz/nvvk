@@ -25,7 +25,6 @@ nvvk 0.2.0 is optimized for NVIDIA 590.48.01+ drivers which include:
 - **Better Wayland 1.20+ integration** - Full low latency support on modern Wayland compositors
 - **Improved VK_NV_low_latency2 timing** - More consistent frame pacing with Reflex enabled
 
-These improvements make nvvk's Reflex implementation production-ready for DXVK/vkd3d-proton patching.
 
 ## Architecture
 
@@ -143,7 +142,7 @@ nvvk is part of the NVIDIA Linux Gaming Stack:
 
 | Project | Purpose | Language |
 |---------|---------|----------|
-| **nvcontrol** | GUI/TUI control center | Rust |
+| **nvcontrol** |Nvidia Control Panel for Wayland | Rust |
 | **nvvk** | Vulkan extension library | Zig |
 | **nvlatency** | Reflex/latency tools | Zig |
 | **nvshader** | Shader cache management | Zig |

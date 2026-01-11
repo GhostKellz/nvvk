@@ -31,8 +31,14 @@ pub const MotionVectorBuffer = struct {
     cost_view: ?vk.VkImageView = null,
     cost_memory: ?vk.VkDeviceMemory = null,
 
+    /// Input frame dimensions
     width: u32,
     height: u32,
+
+    /// Motion vector grid dimensions (derived from width/height and grid_size)
+    grid_width: u32,
+    grid_height: u32,
+
     grid_size: optical_flow.GridSize,
 };
 
@@ -174,12 +180,185 @@ pub const MotionVectorContext = struct {
         return self.frame_history[self.current_frame_idx];
     }
 
+    /// Create optical flow session and motion vector buffers
+    /// Must be called after init() to set up GPU resources
+    pub fn createResources(
+        self: *MotionVectorContext,
+        physical_device: vk.VkPhysicalDevice,
+        get_instance_proc_addr: vk.PFN_vkGetInstanceProcAddr,
+        get_device_proc_addr: vk.PFN_vkGetDeviceProcAddr,
+    ) !void {
+        const dispatch = self.dispatch orelse return error.NotInitialized;
+
+        // Calculate motion vector grid dimensions
+        const mv_dims = calculateMVDimensions(
+            self.config.width,
+            self.config.height,
+            self.config.grid_size,
+        );
+
+        // Create optical flow context
+        var flow_config = optical_flow.OpticalFlowConfig{
+            .width = self.config.width,
+            .height = self.config.height,
+            .hint_grid_size = self.config.grid_size,
+            .performance_level = self.config.performance,
+            .output_grid_size = self.config.grid_size,
+        };
+
+        if (self.config.enable_cost) {
+            flow_config.flags |= optical_flow.VK_OPTICAL_FLOW_SESSION_CREATE_ENABLE_COST_BIT_NV;
+        }
+        if (self.config.bidirectional) {
+            flow_config.flags |= optical_flow.VK_OPTICAL_FLOW_SESSION_CREATE_BOTH_DIRECTIONS_BIT_NV;
+        }
+
+        self.flow_ctx = try optical_flow.OpticalFlowContext.init(
+            self.device,
+            physical_device,
+            get_instance_proc_addr,
+            get_device_proc_addr,
+            flow_config,
+        );
+
+        // Create motion vector images
+        // Format: R16G16_SFIXED for S10.5 motion vectors
+        const mv_format: u32 = 97; // VK_FORMAT_R16G16_SFLOAT (closest available)
+
+        // Forward flow image (required)
+        const forward_image = try self.createFlowImage(dispatch, mv_dims.width, mv_dims.height, mv_format);
+
+        // Backward flow image (optional, for quality mode)
+        var backward_image: ?struct { image: vk.VkImage, view: vk.VkImageView, memory: vk.VkDeviceMemory } = null;
+        if (self.config.bidirectional) {
+            backward_image = try self.createFlowImage(dispatch, mv_dims.width, mv_dims.height, mv_format);
+        }
+
+        // Cost map (optional, for confidence weighting)
+        var cost_image: ?struct { image: vk.VkImage, view: vk.VkImageView, memory: vk.VkDeviceMemory } = null;
+        if (self.config.enable_cost) {
+            // Cost map is single channel
+            cost_image = try self.createFlowImage(dispatch, mv_dims.width, mv_dims.height, 9); // VK_FORMAT_R8_UNORM
+        }
+
+        self.mv_buffer = MotionVectorBuffer{
+            .forward = forward_image.image,
+            .forward_view = forward_image.view,
+            .forward_memory = forward_image.memory,
+            .backward = if (backward_image) |bi| bi.image else null,
+            .backward_view = if (backward_image) |bi| bi.view else null,
+            .backward_memory = if (backward_image) |bi| bi.memory else null,
+            .cost = if (cost_image) |ci| ci.image else null,
+            .cost_view = if (cost_image) |ci| ci.view else null,
+            .cost_memory = if (cost_image) |ci| ci.memory else null,
+            .width = self.config.width,
+            .height = self.config.height,
+            .grid_width = mv_dims.width,
+            .grid_height = mv_dims.height,
+            .grid_size = self.config.grid_size,
+        };
+    }
+
+    /// Create a single flow image with memory
+    fn createFlowImage(
+        self: *MotionVectorContext,
+        dispatch: *const vk.DeviceDispatch,
+        width: u32,
+        height: u32,
+        format: u32,
+    ) !struct { image: vk.VkImage, view: vk.VkImageView, memory: vk.VkDeviceMemory } {
+        const device = self.device;
+
+        const create_image = dispatch.vkCreateImage orelse return error.FunctionNotFound;
+        const create_image_view = dispatch.vkCreateImageView orelse return error.FunctionNotFound;
+        const get_mem_req = dispatch.vkGetImageMemoryRequirements orelse return error.FunctionNotFound;
+        const alloc_memory = dispatch.vkAllocateMemory orelse return error.FunctionNotFound;
+        const bind_image_memory = dispatch.vkBindImageMemory orelse return error.FunctionNotFound;
+
+        // Create image
+        const image_info = vk.VkImageCreateInfo{
+            .imageType = 1, // VK_IMAGE_TYPE_2D
+            .format = format,
+            .extent = .{ .width = width, .height = height, .depth = 1 },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = 1, // VK_SAMPLE_COUNT_1_BIT
+            .tiling = 0, // VK_IMAGE_TILING_OPTIMAL
+            .usage = 0x18, // VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+            .sharingMode = 0, // VK_SHARING_MODE_EXCLUSIVE
+            .initialLayout = 0, // VK_IMAGE_LAYOUT_UNDEFINED
+        };
+
+        var image: vk.VkImage = undefined;
+        try vk.check(create_image(device, &image_info, null, &image));
+
+        // Get memory requirements
+        var mem_req: vk.VkMemoryRequirements = undefined;
+        get_mem_req(device, image, &mem_req);
+
+        // Allocate memory (device local)
+        const alloc_info = vk.VkMemoryAllocateInfo{
+            .allocationSize = mem_req.size,
+            .memoryTypeIndex = 0, // TODO: Find proper device local memory type
+        };
+
+        var memory: vk.VkDeviceMemory = undefined;
+        try vk.check(alloc_memory(device, &alloc_info, null, &memory));
+
+        // Bind memory
+        try vk.check(bind_image_memory(device, image, memory, 0));
+
+        // Create image view
+        const view_info = vk.VkImageViewCreateInfo{
+            .image = image,
+            .viewType = 1, // VK_IMAGE_VIEW_TYPE_2D
+            .format = format,
+            .components = .{},
+            .subresourceRange = .{
+                .aspectMask = 1, // VK_IMAGE_ASPECT_COLOR_BIT
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+
+        var view: vk.VkImageView = undefined;
+        try vk.check(create_image_view(device, &view_info, null, &view));
+
+        return .{ .image = image, .view = view, .memory = memory };
+    }
+
+    /// Destroy motion vector buffer resources
+    pub fn destroyResources(self: *MotionVectorContext) void {
+        const dispatch = self.dispatch orelse return;
+        const destroy_image = dispatch.vkDestroyImage orelse return;
+        const destroy_view = dispatch.vkDestroyImageView orelse return;
+        const free_memory = dispatch.vkFreeMemory orelse return;
+
+        if (self.mv_buffer) |mvb| {
+            destroy_view(dispatch.device, mvb.forward_view, null);
+            destroy_image(dispatch.device, mvb.forward, null);
+            free_memory(dispatch.device, mvb.forward_memory, null);
+
+            if (mvb.backward_view) |v| destroy_view(dispatch.device, v, null);
+            if (mvb.backward) |i| destroy_image(dispatch.device, i, null);
+            if (mvb.backward_memory) |m| free_memory(dispatch.device, m, null);
+
+            if (mvb.cost_view) |v| destroy_view(dispatch.device, v, null);
+            if (mvb.cost) |i| destroy_image(dispatch.device, i, null);
+            if (mvb.cost_memory) |m| free_memory(dispatch.device, m, null);
+
+            self.mv_buffer = null;
+        }
+    }
+
     /// Cleanup resources
     pub fn deinit(self: *MotionVectorContext) void {
+        self.destroyResources();
         if (self.flow_ctx) |*ctx| {
             ctx.deinit();
         }
-        // Note: Caller is responsible for destroying images/memory
     }
 };
 

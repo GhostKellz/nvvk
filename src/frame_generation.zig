@@ -274,27 +274,112 @@ pub const FrameGenContext = struct {
     // Private Methods
     // ==========================================================================
 
+    /// Detect scene changes using multiple heuristics
     fn detectSceneChange(self: *FrameGenContext, mvb: *const motion_vectors.MotionVectorBuffer) bool {
-        _ = mvb;
-        // Simple scene change detection based on cost map or motion magnitude
-        // In full implementation:
-        // - Check average cost from cost map
-        // - Check motion vector variance
-        // - Check luminance histogram difference
+        // Performance mode: skip scene change detection for speed
+        if (self.config.mode == .performance) {
+            return false;
+        }
 
-        // For now, always return false (no scene change)
-        _ = self;
+        // Heuristic 1: Check motion vector coverage
+        // Large areas with very high motion often indicate scene cuts
+        const mv_area = mvb.grid_width * mvb.grid_height;
+        const total_pixels = mvb.width * mvb.height;
+
+        // If MV grid is much smaller than expected, something's wrong
+        if (mv_area == 0) {
+            return true;
+        }
+
+        // Heuristic 2: Check for motion discontinuities
+        // Scene changes typically have uniform motion in one direction
+        // (camera cut) or very chaotic motion (dissolve/fade)
+        const grid_divisor: f32 = switch (mvb.grid_size) {
+            .@"1x1" => 1.0,
+            .@"2x2" => 2.0,
+            .@"4x4" => 4.0,
+            .@"8x8" => 8.0,
+            .unknown => 4.0,
+        };
+
+        // Expected motion coverage ratio
+        const coverage_ratio = @as(f32, @floatFromInt(mv_area)) /
+            (@as(f32, @floatFromInt(total_pixels)) / (grid_divisor * grid_divisor));
+
+        // If coverage is abnormally low, likely a scene change
+        if (coverage_ratio < 0.5) {
+            return true;
+        }
+
+        // Heuristic 3: Frame time discontinuity
+        // Sudden large changes in frame timing can indicate cuts
+        if (self.stats.avg_gen_time_us > 0) {
+            const current_time = self.frame_times[self.frame_time_idx];
+            if (current_time > self.stats.avg_gen_time_us * 3) {
+                // Frame took 3x longer than average - likely complex scene
+                return true;
+            }
+        }
+
+        // Heuristic 4: Cost map threshold (if available in quality mode)
+        // High average cost indicates poor optical flow match
+        if (self.config.mode == .quality and mvb.cost != null) {
+            // Cost map indicates confidence - we'd need to read back the GPU data
+            // For now, rely on frame-to-frame confidence tracking
+            if (self.stats.confidence < self.config.scene_change_threshold) {
+                return true;
+            }
+        }
+
         return false;
     }
 
+    /// Calculate frame synthesis confidence based on optical flow quality
     fn calculateConfidence(self: *const FrameGenContext, mvb: *const motion_vectors.MotionVectorBuffer) f32 {
-        _ = mvb;
-        _ = self;
-        // In full implementation, use cost map to calculate confidence
-        // Lower cost = higher confidence
+        // Base confidence depends on mode
+        var confidence: f32 = switch (self.config.mode) {
+            .off => 0.0,
+            .performance => 0.85, // Performance mode assumes good flow
+            .balanced => 0.80,
+            .quality => 0.75, // Quality mode is more conservative
+        };
 
-        // For performance mode, always return high confidence
-        return 0.95;
+        // Adjust based on motion vector grid resolution
+        // Higher resolution = better confidence
+        const grid_bonus: f32 = switch (mvb.grid_size) {
+            .@"1x1" => 0.15,
+            .@"2x2" => 0.10,
+            .@"4x4" => 0.05,
+            .@"8x8" => 0.0,
+            .unknown => 0.0,
+        };
+        confidence += grid_bonus;
+
+        // Penalize if no backward flow (less accurate synthesis)
+        if (mvb.backward == null and self.config.mode != .performance) {
+            confidence -= 0.1;
+        }
+
+        // Penalize if no cost map (can't verify quality)
+        if (mvb.cost == null and self.config.mode == .quality) {
+            confidence -= 0.15;
+        }
+
+        // Boost confidence if we have bidirectional flow
+        if (mvb.backward != null) {
+            confidence += 0.05;
+        }
+
+        // Factor in historical success rate
+        if (self.stats.generated_frames > 10) {
+            const success_rate = @as(f32, @floatFromInt(self.stats.generated_frames)) /
+                @as(f32, @floatFromInt(self.stats.generated_frames + self.stats.skipped_frames));
+            // Blend current confidence with historical success
+            confidence = confidence * 0.7 + success_rate * 0.3;
+        }
+
+        // Clamp to valid range
+        return @max(0.0, @min(1.0, confidence));
     }
 
     fn updateFrameTime(self: *FrameGenContext, gen_time: u64) void {
