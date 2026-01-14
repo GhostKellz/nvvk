@@ -136,26 +136,26 @@ pub const LfcState = vrr.LfcState;
 pub const version = std.SemanticVersion{
     .major = 0,
     .minor = 4,
-    .patch = 0,
+    .patch = 1,
 };
 
 /// Check if running on NVIDIA GPU (basic check via driver name)
 pub fn isNvidiaGpu() bool {
     // This is a simplified check - in production, query physical device properties
-    const driver_path = "/proc/driver/nvidia/version";
-    const file = std.fs.openFileAbsolute(driver_path, .{}) catch return false;
-    file.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    std.Io.Dir.accessAbsolute(io, "/proc/driver/nvidia/version", .{}) catch return false;
     return true;
 }
 
 /// Get NVIDIA driver version from /proc
 pub fn getNvidiaDriverVersion(allocator: std.mem.Allocator) ?[]const u8 {
-    const file = std.fs.openFileAbsolute("/proc/driver/nvidia/version", .{}) catch return null;
-    defer file.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const file = std.Io.Dir.openFileAbsolute(io, "/proc/driver/nvidia/version", .{}) catch return null;
+    defer file.close(io);
 
     // Read into a fixed buffer
     var buffer: [4096]u8 = undefined;
-    const bytes_read = file.read(&buffer) catch return null;
+    const bytes_read = file.readPositionalAll(io, &buffer, 0) catch return null;
     const content = buffer[0..bytes_read];
 
     // Parse version from first line (e.g., "NVRM version: NVIDIA UNIX x86_64 Kernel Module  560.35.03...")
@@ -284,7 +284,7 @@ pub const ext_names = struct {
 test "version" {
     try std.testing.expectEqual(@as(u8, 0), version.major);
     try std.testing.expectEqual(@as(u8, 4), version.minor);
-    try std.testing.expectEqual(@as(u8, 0), version.patch);
+    try std.testing.expectEqual(@as(u8, 1), version.patch);
 }
 
 test "extension names" {

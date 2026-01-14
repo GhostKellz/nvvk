@@ -105,7 +105,7 @@ pub const CheckpointTag = enum(usize) {
     pub fn fromPtr(ptr: ?*anyopaque) ?CheckpointTag {
         if (ptr) |p| {
             const val = @intFromPtr(p);
-            return std.meta.intToEnum(CheckpointTag, val) catch null;
+            return @enumFromInt(val);
         }
         return null;
     }

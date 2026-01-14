@@ -92,7 +92,7 @@ pub fn build(b: *std.Build) void {
     });
 
     // Link Vulkan
-    lib.linkSystemLibrary("vulkan");
+    lib.root_module.linkSystemLibrary("vulkan", .{});
 
     // Install library
     b.installArtifact(lib);
@@ -117,7 +117,7 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    exe.linkSystemLibrary("vulkan");
+    exe.root_module.linkSystemLibrary("vulkan", .{});
     b.installArtifact(exe);
 
     // Run step
@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    mod_tests.linkSystemLibrary("vulkan");
+    mod_tests.root_module.linkSystemLibrary("vulkan", .{});
 
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
