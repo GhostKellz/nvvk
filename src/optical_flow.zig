@@ -191,10 +191,17 @@ pub const PFN_vkCmdOpticalFlowExecuteNV = *const fn (
 // High-Level Wrapper
 // =============================================================================
 
+/// Session creation flags
+pub const VK_OPTICAL_FLOW_SESSION_CREATE_ENABLE_HINT_BIT_NV: u32 = 0x00000001;
+pub const VK_OPTICAL_FLOW_SESSION_CREATE_ENABLE_COST_BIT_NV: u32 = 0x00000002;
+pub const VK_OPTICAL_FLOW_SESSION_CREATE_ENABLE_GLOBAL_FLOW_BIT_NV: u32 = 0x00000004;
+pub const VK_OPTICAL_FLOW_SESSION_CREATE_ALLOW_REGIONS_BIT_NV: u32 = 0x00000008;
+pub const VK_OPTICAL_FLOW_SESSION_CREATE_BOTH_DIRECTIONS_BIT_NV: u32 = 0x00000010;
+
 /// Optical flow session context
 pub const OpticalFlowContext = struct {
     device: vk.VkDevice,
-    session: VkOpticalFlowSessionNV,
+    session: ?VkOpticalFlowSessionNV,
     width: u32,
     height: u32,
     output_grid_size: GridSize,
@@ -206,11 +213,87 @@ pub const OpticalFlowContext = struct {
     vkBindOpticalFlowSessionImageNV: ?PFN_vkBindOpticalFlowSessionImageNV,
     vkCmdOpticalFlowExecuteNV: ?PFN_vkCmdOpticalFlowExecuteNV,
 
+    /// Initialize optical flow context and create session
+    pub fn init(
+        device: vk.VkDevice,
+        physical_device: vk.VkPhysicalDevice,
+        get_instance_proc_addr: vk.PFN_vkGetInstanceProcAddr,
+        get_device_proc_addr: vk.PFN_vkGetDeviceProcAddr,
+        config: OpticalFlowConfig,
+    ) !OpticalFlowContext {
+        _ = physical_device;
+        _ = get_instance_proc_addr;
+
+        // Load extension function pointers
+        const vkCreateOpticalFlowSessionNV: ?PFN_vkCreateOpticalFlowSessionNV = @ptrCast(
+            get_device_proc_addr(device, "vkCreateOpticalFlowSessionNV"),
+        );
+        const vkDestroyOpticalFlowSessionNV: ?PFN_vkDestroyOpticalFlowSessionNV = @ptrCast(
+            get_device_proc_addr(device, "vkDestroyOpticalFlowSessionNV"),
+        );
+        const vkBindOpticalFlowSessionImageNV: ?PFN_vkBindOpticalFlowSessionImageNV = @ptrCast(
+            get_device_proc_addr(device, "vkBindOpticalFlowSessionImageNV"),
+        );
+        const vkCmdOpticalFlowExecuteNV: ?PFN_vkCmdOpticalFlowExecuteNV = @ptrCast(
+            get_device_proc_addr(device, "vkCmdOpticalFlowExecuteNV"),
+        );
+
+        const create_fn = vkCreateOpticalFlowSessionNV orelse return error.ExtensionNotLoaded;
+
+        // Build session creation flags (start with user-provided flags)
+        var flags: u32 = config.flags;
+        if (config.bidirectional) {
+            flags |= VK_OPTICAL_FLOW_SESSION_CREATE_BOTH_DIRECTIONS_BIT_NV;
+        }
+        if (config.enable_cost) {
+            flags |= VK_OPTICAL_FLOW_SESSION_CREATE_ENABLE_COST_BIT_NV;
+        }
+        if (config.enable_global_flow) {
+            flags |= VK_OPTICAL_FLOW_SESSION_CREATE_ENABLE_GLOBAL_FLOW_BIT_NV;
+        }
+        if (config.hint_grid_size != .unknown) {
+            flags |= VK_OPTICAL_FLOW_SESSION_CREATE_ENABLE_HINT_BIT_NV;
+        }
+
+        // Create optical flow session
+        const create_info = VkOpticalFlowSessionCreateInfoNV{
+            .width = config.width,
+            .height = config.height,
+            .imageFormat = if (config.image_format != 0) config.image_format else vk.VK_FORMAT_R8G8B8A8_UNORM,
+            .flowVectorFormat = VK_FORMAT_R16G16_S10_5_NV,
+            .costFormat = vk.VK_FORMAT_R8_UNORM,
+            .outputGridSize = @intFromEnum(config.output_grid_size),
+            .hintGridSize = @intFromEnum(config.hint_grid_size),
+            .performanceLevel = @intFromEnum(config.performance_level),
+            .flags = flags,
+        };
+
+        var session: VkOpticalFlowSessionNV = undefined;
+        const result = create_fn(device, &create_info, null, &session);
+        try vk.check(result);
+
+        return .{
+            .device = device,
+            .session = session,
+            .width = config.width,
+            .height = config.height,
+            .output_grid_size = config.output_grid_size,
+            .performance_level = config.performance_level,
+            .bidirectional = config.bidirectional,
+            .vkDestroyOpticalFlowSessionNV = vkDestroyOpticalFlowSessionNV,
+            .vkBindOpticalFlowSessionImageNV = vkBindOpticalFlowSessionImageNV,
+            .vkCmdOpticalFlowExecuteNV = vkCmdOpticalFlowExecuteNV,
+        };
+    }
+
     /// Destroy the optical flow session
     pub fn deinit(self: *OpticalFlowContext) void {
-        if (self.vkDestroyOpticalFlowSessionNV) |destroy| {
-            destroy(self.device, self.session, null);
+        if (self.session) |session| {
+            if (self.vkDestroyOpticalFlowSessionNV) |destroy| {
+                destroy(self.device, session, null);
+            }
         }
+        self.session = null;
     }
 
     /// Bind an image to a specific binding point
@@ -220,12 +303,13 @@ pub const OpticalFlowContext = struct {
         image_view: vk.VkImageView,
         layout: u32,
     ) !void {
+        const session = self.session orelse return error.SessionNotInitialized;
         const bind = self.vkBindOpticalFlowSessionImageNV orelse
             return error.ExtensionNotLoaded;
 
         const result = bind(
             self.device,
-            self.session,
+            session,
             @intFromEnum(binding_point),
             image_view,
             layout,
@@ -239,8 +323,9 @@ pub const OpticalFlowContext = struct {
         cmd: vk.VkCommandBuffer,
         regions: ?[]const vk.VkRect2D,
         flags: ExecuteFlags,
-    ) void {
-        const exec = self.vkCmdOpticalFlowExecuteNV orelse return;
+    ) !void {
+        const session = self.session orelse return error.SessionNotInitialized;
+        const exec = self.vkCmdOpticalFlowExecuteNV orelse return error.ExtensionNotLoaded;
 
         const info = VkOpticalFlowExecuteInfoNV{
             .flags = @bitCast(flags),
@@ -248,7 +333,7 @@ pub const OpticalFlowContext = struct {
             .pRegions = if (regions) |r| r.ptr else null,
         };
 
-        exec(cmd, self.session, &info);
+        exec(cmd, session, &info);
     }
 };
 
@@ -263,6 +348,8 @@ pub const OpticalFlowConfig = struct {
     bidirectional: bool = false,
     enable_cost: bool = false,
     enable_global_flow: bool = false,
+    /// Additional session creation flags
+    flags: u32 = 0,
 };
 
 /// Query optical flow properties for a physical device

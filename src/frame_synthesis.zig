@@ -771,6 +771,41 @@ pub const FrameSynthesisContext = struct {
         const device = self.device orelse return;
         const dispatch = self.dispatch orelse return;
 
+        // Destroy quality mode pipelines and resources
+        if (self.quality_pipeline) |qp| {
+            if (qp.backward_warp_pipeline) |p| {
+                if (dispatch.vkDestroyPipeline) |destroy_fn| destroy_fn(device, p, null);
+            }
+            if (qp.confidence_blend_pipeline) |p| {
+                if (dispatch.vkDestroyPipeline) |destroy_fn| destroy_fn(device, p, null);
+            }
+            if (qp.occlusion_fill_pipeline) |p| {
+                if (dispatch.vkDestroyPipeline) |destroy_fn| destroy_fn(device, p, null);
+            }
+
+            // Destroy backward warped image resources
+            if (qp.backward_warped_view) |v| {
+                if (dispatch.vkDestroyImageView) |destroy_fn| destroy_fn(device, v, null);
+            }
+            if (qp.backward_warped) |i| {
+                if (dispatch.vkDestroyImage) |destroy_fn| destroy_fn(device, i, null);
+            }
+            if (qp.backward_warped_memory) |m| {
+                if (dispatch.vkFreeMemory) |free_fn| free_fn(device, m, null);
+            }
+
+            // Destroy filled output image resources
+            if (qp.filled_output_view) |v| {
+                if (dispatch.vkDestroyImageView) |destroy_fn| destroy_fn(device, v, null);
+            }
+            if (qp.filled_output) |i| {
+                if (dispatch.vkDestroyImage) |destroy_fn| destroy_fn(device, i, null);
+            }
+            if (qp.filled_output_memory) |m| {
+                if (dispatch.vkFreeMemory) |free_fn| free_fn(device, m, null);
+            }
+        }
+
         // Destroy pipelines
         if (self.warp_pipeline) |p| dispatch.vkDestroyPipeline.?(device, p, null);
         if (self.blend_pipeline) |p| dispatch.vkDestroyPipeline.?(device, p, null);

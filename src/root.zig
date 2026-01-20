@@ -47,7 +47,7 @@ pub const ray_tracing_reorder = @import("ray_tracing_reorder.zig");
 pub const cuda_interop = @import("cuda_interop.zig");
 pub const displacement_micromap = @import("displacement_micromap.zig");
 
-// Frame generation modules (Phase 3)
+// Frame generation modules
 pub const motion_vectors = @import("motion_vectors.zig");
 pub const frame_synthesis = @import("frame_synthesis.zig");
 pub const frame_generation = @import("frame_generation.zig");
@@ -55,6 +55,19 @@ pub const present_injection = @import("present_injection.zig");
 
 // VRR integration (via nvsync)
 pub const vrr = @import("vrr.zig");
+
+// Async sleep support
+pub const async_sleep = @import("async_sleep.zig");
+
+// Vulkan layers
+pub const layer = @import("layer.zig");
+pub const layer_low_latency = @import("layer_low_latency.zig");
+
+// Validation layer integration
+pub const validation = @import("validation.zig");
+
+// Integration tests
+pub const integration_test = @import("integration_test.zig");
 
 // Re-export commonly used types
 pub const VkResult = vulkan.VkResult;
@@ -132,11 +145,30 @@ pub const VrrSource = vrr.VrrSource;
 pub const VrrStatus = vrr.VrrStatus;
 pub const LfcState = vrr.LfcState;
 
+// Async sleep exports
+pub const AsyncSleepContext = async_sleep.AsyncSleepContext;
+pub const AsyncSleepHandle = async_sleep.AsyncSleepHandle;
+pub const AsyncCallback = async_sleep.AsyncCallback;
+pub const AsyncResult = async_sleep.AsyncResult;
+
+// Layer exports
+pub const LAYER_NAME = layer.LAYER_NAME;
+pub const LAYER_DESCRIPTION = layer.LAYER_DESCRIPTION;
+pub const LOW_LATENCY_LAYER_NAME = layer_low_latency.LAYER_NAME;
+pub const LOW_LATENCY_LAYER_DESCRIPTION = layer_low_latency.LAYER_DESCRIPTION;
+
+// Validation exports
+pub const ValidationContext = validation.ValidationContext;
+pub const ValidationStats = validation.ValidationStats;
+pub const DebugSeverity = validation.DebugSeverity;
+pub const DebugType = validation.DebugType;
+pub const VALIDATION_LAYER_NAME = validation.VALIDATION_LAYER_NAME;
+
 /// Library version
 pub const version = std.SemanticVersion{
     .major = 0,
     .minor = 4,
-    .patch = 1,
+    .patch = 2,
 };
 
 /// Check if running on NVIDIA GPU (basic check via driver name)
@@ -284,7 +316,7 @@ pub const ext_names = struct {
 test "version" {
     try std.testing.expectEqual(@as(u8, 0), version.major);
     try std.testing.expectEqual(@as(u8, 4), version.minor);
-    try std.testing.expectEqual(@as(u8, 1), version.patch);
+    try std.testing.expectEqual(@as(u8, 2), version.patch);
 }
 
 test "extension names" {

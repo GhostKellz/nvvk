@@ -1,0 +1,393 @@
+From: nvvk <nvvk@nvidia-vulkan.local>
+Subject: [PATCH 2/2] Add nvvk frame generation hooks for vkd3d-proton
+
+This patch adds frame generation support to vkd3d-proton via nvvk library.
+Interpolated frames are injected after real presents to double effective FPS.
+
+Features:
+- Automatic frame history capture from DX12 presents
+- Motion vector extraction
+- AI-interpolated frame generation
+- VRR-aware frame injection timing
+
+Enable with: VKD3D_NVVK_FRAME_GEN=1
+---
+ libs/vkd3d/vkd3d_nvvk_framegen.h | 62 +++++++++++++++++++++
+ libs/vkd3d/vkd3d_nvvk_framegen.c | 168 +++++++++++++++++++++++++++++++++++++
+ libs/vkd3d/d3d12_swapchain.c     | 58 ++++++++++++++++
+ 3 files changed, 288 insertions(+)
+ create mode 100644 libs/vkd3d/vkd3d_nvvk_framegen.h
+ create mode 100644 libs/vkd3d/vkd3d_nvvk_framegen.c
+
+diff --git a/libs/vkd3d/vkd3d_nvvk_framegen.h b/libs/vkd3d/vkd3d_nvvk_framegen.h
+new file mode 100644
+index 000000000..111111111
+--- /dev/null
++++ b/libs/vkd3d/vkd3d_nvvk_framegen.h
+@@ -0,0 +1,62 @@
++#ifndef __VKD3D_NVVK_FRAMEGEN_H
++#define __VKD3D_NVVK_FRAMEGEN_H
++
++#include "vkd3d_private.h"
++
++#ifdef VKD3D_NVVK_ENABLED
++#include <nvvk/nvvk.h>
++#include <nvvk/nvvk_frame_generation.h>
++#endif
++
++enum vkd3d_nvvk_framegen_mode
++{
++    VKD3D_NVVK_FRAMEGEN_OFF = 0,
++    VKD3D_NVVK_FRAMEGEN_PERFORMANCE,
++    VKD3D_NVVK_FRAMEGEN_BALANCED,
++    VKD3D_NVVK_FRAMEGEN_QUALITY,
++};
++
++struct vkd3d_nvvk_framegen_stats
++{
++    uint64_t real_frames;
++    uint64_t generated_frames;
++    double effective_fps;
++    double added_latency_ms;
++};
++
++struct vkd3d_nvvk_framegen_context
++{
++#ifdef VKD3D_NVVK_ENABLED
++    NvvkFrameGenHandle handle;
++    NvvkPresentInjectionHandle injector;
++#else
++    void *handle;
++    void *injector;
++#endif
++    bool enabled;
++    bool supported;
++    enum vkd3d_nvvk_framegen_mode mode;
++    uint32_t width;
++    uint32_t height;
++};
++
++HRESULT vkd3d_nvvk_framegen_init(
++    struct d3d12_device *device,
++    VkSwapchainKHR swapchain,
++    uint32_t width,
++    uint32_t height,
++    struct vkd3d_nvvk_framegen_context **out_context);
++
++void vkd3d_nvvk_framegen_destroy(struct vkd3d_nvvk_framegen_context *context);
++
++bool vkd3d_nvvk_framegen_is_supported(struct vkd3d_nvvk_framegen_context *context);
++
++void vkd3d_nvvk_framegen_on_present(
++    struct vkd3d_nvvk_framegen_context *context,
++    VkImage frame,
++    VkQueue queue);
++
++void vkd3d_nvvk_framegen_get_stats(
++    struct vkd3d_nvvk_framegen_context *context,
++    struct vkd3d_nvvk_framegen_stats *stats);
++
++void vkd3d_nvvk_framegen_resize(
++    struct vkd3d_nvvk_framegen_context *context,
++    VkSwapchainKHR swapchain,
++    uint32_t width,
++    uint32_t height);
++
++#endif /* __VKD3D_NVVK_FRAMEGEN_H */
++
+diff --git a/libs/vkd3d/vkd3d_nvvk_framegen.c b/libs/vkd3d/vkd3d_nvvk_framegen.c
+new file mode 100644
+index 000000000..111111111
+--- /dev/null
++++ b/libs/vkd3d/vkd3d_nvvk_framegen.c
+@@ -0,0 +1,168 @@
++#include "vkd3d_nvvk_framegen.h"
++#include <stdlib.h>
++#include <string.h>
++
++static enum vkd3d_nvvk_framegen_mode parse_mode_env(void)
++{
++    const char *env = getenv("VKD3D_NVVK_FRAME_GEN_MODE");
++    if (!env)
++        return VKD3D_NVVK_FRAMEGEN_BALANCED;
++
++    if (strcmp(env, "performance") == 0)
++        return VKD3D_NVVK_FRAMEGEN_PERFORMANCE;
++    if (strcmp(env, "quality") == 0)
++        return VKD3D_NVVK_FRAMEGEN_QUALITY;
++    if (strcmp(env, "off") == 0)
++        return VKD3D_NVVK_FRAMEGEN_OFF;
++
++    return VKD3D_NVVK_FRAMEGEN_BALANCED;
++}
++
++HRESULT vkd3d_nvvk_framegen_init(
++    struct d3d12_device *device,
++    VkSwapchainKHR swapchain,
++    uint32_t width,
++    uint32_t height,
++    struct vkd3d_nvvk_framegen_context **out_context)
++{
++    struct vkd3d_nvvk_framegen_context *context;
++    const char *env_enabled;
++
++    *out_context = NULL;
++
++    /* Check environment */
++    env_enabled = getenv("VKD3D_NVVK_FRAME_GEN");
++    if (!env_enabled || strcmp(env_enabled, "1") != 0)
++        return S_OK;
++
++    context = calloc(1, sizeof(*context));
++    if (!context)
++        return E_OUTOFMEMORY;
++
++    context->mode = parse_mode_env();
++    context->width = width;
++    context->height = height;
++
++#ifdef VKD3D_NVVK_ENABLED
++    /* Initialize frame generation */
++    NvvkFrameGenConfig config = {
++        .width = width,
++        .height = height,
++        .mode = (int)context->mode,
++        .enableMotionVectors = true,
++        .enableOpticalFlow = true,
++    };
++
++    context->handle = nvvk_frame_gen_init(
++        device->vk_device,
++        device->vk_physical_device,
++        vkGetDeviceProcAddr,
++        &config
++    );
++
++    if (!context->handle || !nvvk_frame_gen_is_supported(context->handle))
++    {
++        WARN("nvvk frame generation not supported\n");
++        free(context);
++        return S_OK;
++    }
++
++    /* Initialize present injection */
++    NvvkInjectionConfig inject_config = {
++        .mode = NVVK_INJECTION_SINGLE,
++        .timing = NVVK_TIMING_ADAPTIVE,
++        .vrrAware = true,
++    };
++
++    context->injector = nvvk_present_injection_init(
++        device->vk_device,
++        (uint64_t)swapchain,
++        context->handle,
++        &inject_config
++    );
++
++    if (!context->injector)
++    {
++        nvvk_frame_gen_destroy(context->handle);
++        free(context);
++        return S_OK;
++    }
++
++    context->supported = true;
++    context->enabled = (context->mode != VKD3D_NVVK_FRAMEGEN_OFF);
++
++    INFO("vkd3d-proton: nvvk frame generation enabled (mode: %d, %ux%u)\n",
++         context->mode, width, height);
++#else
++    WARN("nvvk support not compiled in\n");
++    free(context);
++    return S_OK;
++#endif
++
++    *out_context = context;
++    return S_OK;
++}
++
++void vkd3d_nvvk_framegen_destroy(struct vkd3d_nvvk_framegen_context *context)
++{
++    if (!context)
++        return;
++
++#ifdef VKD3D_NVVK_ENABLED
++    if (context->injector)
++        nvvk_present_injection_destroy(context->injector);
++    if (context->handle)
++        nvvk_frame_gen_destroy(context->handle);
++#endif
++
++    free(context);
++}
++
++bool vkd3d_nvvk_framegen_is_supported(struct vkd3d_nvvk_framegen_context *context)
++{
++    return context && context->supported;
++}
++
++void vkd3d_nvvk_framegen_on_present(
++    struct vkd3d_nvvk_framegen_context *context,
++    VkImage frame,
++    VkQueue queue)
++{
++#ifdef VKD3D_NVVK_ENABLED
++    if (!context || !context->enabled)
++        return;
++
++    /* Push frame to history */
++    if (context->handle)
++        nvvk_frame_gen_push_frame(context->handle, (uint64_t)frame, NULL);
++
++    /* Record present and potentially inject */
++    if (context->injector)
++    {
++        nvvk_present_injection_record_present(context->injector, false);
++
++        if (nvvk_present_injection_should_inject(context->injector))
++        {
++            NvvkGeneratedFrame gen_frame;
++            if (nvvk_frame_gen_get_frame(context->handle, &gen_frame) == NVVK_SUCCESS)
++            {
++                /* Present the generated frame */
++                nvvk_present_injection_inject_frame(
++                    context->injector,
++                    queue,
++                    gen_frame.image
++                );
++            }
++        }
++    }
++#else
++    (void)context;
++    (void)frame;
++    (void)queue;
++#endif
++}
++
++void vkd3d_nvvk_framegen_get_stats(
++    struct vkd3d_nvvk_framegen_context *context,
++    struct vkd3d_nvvk_framegen_stats *stats)
++{
++    memset(stats, 0, sizeof(*stats));
++
++#ifdef VKD3D_NVVK_ENABLED
++    if (context && context->injector)
++    {
++        NvvkInjectionStats nvstats;
++        nvvk_present_injection_get_stats(context->injector, &nvstats);
++        stats->real_frames = nvstats.real_frames;
++        stats->generated_frames = nvstats.generated_frames;
++        stats->effective_fps = nvstats.effective_fps;
++        stats->added_latency_ms = nvstats.added_latency_ms;
++    }
++#endif
++}
++
++void vkd3d_nvvk_framegen_resize(
++    struct vkd3d_nvvk_framegen_context *context,
++    VkSwapchainKHR swapchain,
++    uint32_t width,
++    uint32_t height)
++{
++#ifdef VKD3D_NVVK_ENABLED
++    if (!context)
++        return;
++
++    context->width = width;
++    context->height = height;
++
++    if (context->handle)
++        nvvk_frame_gen_resize(context->handle, width, height);
++
++    if (context->injector)
++        nvvk_present_injection_set_swapchain(context->injector, (uint64_t)swapchain);
++#else
++    (void)context;
++    (void)swapchain;
++    (void)width;
++    (void)height;
++#endif
++}
++
+diff --git a/libs/vkd3d/d3d12_swapchain.c b/libs/vkd3d/d3d12_swapchain.c
+index 000000000..111111111
+--- a/libs/vkd3d/d3d12_swapchain.c
++++ b/libs/vkd3d/d3d12_swapchain.c
+@@ -XX,6 +XX,7 @@
+ #include "vkd3d_nvvk.h"
++#include "vkd3d_nvvk_framegen.h"
+
+ /* In swapchain structure */
+ struct d3d12_swapchain
+ {
+     /* ... existing fields ... */
++    struct vkd3d_nvvk_framegen_context *framegen;
+ };
+
+ /* In swapchain creation, after creating vk_swapchain */
+@@ -XX,6 +XX,20 @@ static HRESULT d3d12_swapchain_create(/* ... */)
++    /* Initialize frame generation */
++    if (!swapchain->framegen)
++    {
++        vkd3d_nvvk_framegen_init(
++            device,
++            swapchain->vk_swapchain,
++            swapchain->desc.Width,
++            swapchain->desc.Height,
++            &swapchain->framegen
++        );
++    }
++    else
++    {
++        vkd3d_nvvk_framegen_resize(
++            swapchain->framegen,
++            swapchain->vk_swapchain,
++            swapchain->desc.Width,
++            swapchain->desc.Height
++        );
++    }
++
+
+ /* In Present, after vkQueuePresentKHR */
+@@ -XX,6 +XX,38 @@ static HRESULT STDMETHODCALLTYPE d3d12_swapchain_Present(
+     hr = vkQueuePresentKHR(/* ... */);
+
++    /* Frame generation: process and potentially inject frame */
++    if (swapchain->framegen && vkd3d_nvvk_framegen_is_supported(swapchain->framegen))
++    {
++        vkd3d_nvvk_framegen_on_present(
++            swapchain->framegen,
++            swapchain->vk_images[image_index],
++            swapchain->vk_queue
++        );
++
++        /* Periodic stats logging */
++        static uint64_t last_log = 0;
++        struct vkd3d_nvvk_framegen_stats stats;
++        vkd3d_nvvk_framegen_get_stats(swapchain->framegen, &stats);
++
++        if (stats.generated_frames - last_log >= 300)
++        {
++            INFO("nvvk frame gen: %lu real, %lu generated, %.1f effective FPS\n",
++                 stats.real_frames, stats.generated_frames, stats.effective_fps);
++            last_log = stats.generated_frames;
++        }
++    }
++
+     return hr;
+ }
+
+ /* In swapchain destruction */
+ static ULONG STDMETHODCALLTYPE d3d12_swapchain_Release(/* ... */)
+ {
++    if (swapchain->framegen)
++    {
++        vkd3d_nvvk_framegen_destroy(swapchain->framegen);
++        swapchain->framegen = NULL;
++    }
++
+     /* ... existing cleanup ... */
+ }
+--
+2.40.0

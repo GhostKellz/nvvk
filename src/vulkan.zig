@@ -394,6 +394,7 @@ pub const VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER: u32 = 45;
 // Image types
 pub const VK_IMAGE_TYPE_2D: u32 = 1;
 pub const VK_IMAGE_VIEW_TYPE_2D: u32 = 1;
+pub const VK_FORMAT_R8_UNORM: u32 = 9;
 pub const VK_FORMAT_R8G8B8A8_UNORM: u32 = 37;
 pub const VK_FORMAT_R16G16_SFLOAT: u32 = 83; // Motion vectors
 pub const VK_SAMPLE_COUNT_1_BIT: u32 = 1;
@@ -641,6 +642,286 @@ pub const VkShaderModule = *opaque {};
 /// Pipeline cache handle (optional)
 pub const VkPipelineCache = ?*opaque {};
 
+/// Fence handle
+pub const VkFence = u64;
+
+// =============================================================================
+// Layer and Extension Properties
+// =============================================================================
+
+/// API version constants
+pub const VK_API_VERSION_1_0: u32 = (1 << 22) | (0 << 12);
+pub const VK_API_VERSION_1_1: u32 = (1 << 22) | (1 << 12);
+pub const VK_API_VERSION_1_2: u32 = (1 << 22) | (2 << 12);
+pub const VK_API_VERSION_1_3: u32 = (1 << 22) | (3 << 12);
+pub const VK_API_VERSION_1_4: u32 = (1 << 22) | (4 << 12);
+
+/// Minimum required API version for nvvk
+pub const NVVK_MIN_API_VERSION: u32 = VK_API_VERSION_1_3;
+/// Recommended API version for full feature support
+pub const NVVK_RECOMMENDED_API_VERSION: u32 = VK_API_VERSION_1_4;
+
+/// Make API version from components
+pub fn makeApiVersion(variant: u32, major: u32, minor: u32, patch: u32) u32 {
+    return (variant << 29) | (major << 22) | (minor << 12) | patch;
+}
+
+/// Extract major version from API version
+pub fn apiVersionMajor(version: u32) u32 {
+    return (version >> 22) & 0x7F;
+}
+
+/// Extract minor version from API version
+pub fn apiVersionMinor(version: u32) u32 {
+    return (version >> 12) & 0x3FF;
+}
+
+/// Extract patch version from API version
+pub fn apiVersionPatch(version: u32) u32 {
+    return version & 0xFFF;
+}
+
+/// Layer properties structure
+pub const VkLayerProperties = extern struct {
+    layerName: [256]u8 = [_]u8{0} ** 256,
+    specVersion: u32 = 0,
+    implementationVersion: u32 = 0,
+    description: [256]u8 = [_]u8{0} ** 256,
+};
+
+/// Extension properties structure
+pub const VkExtensionProperties = extern struct {
+    extensionName: [256]u8 = [_]u8{0} ** 256,
+    specVersion: u32 = 0,
+};
+
+// =============================================================================
+// Instance and Device Creation
+// =============================================================================
+
+/// Application info structure
+pub const VkApplicationInfo = extern struct {
+    sType: VkStructureType = .application_info,
+    pNext: ?*const anyopaque = null,
+    pApplicationName: ?[*:0]const u8 = null,
+    applicationVersion: u32 = 0,
+    pEngineName: ?[*:0]const u8 = null,
+    engineVersion: u32 = 0,
+    apiVersion: u32 = 0,
+};
+
+/// Instance create info structure
+pub const VkInstanceCreateInfo = extern struct {
+    sType: VkStructureType = .instance_create_info,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    pApplicationInfo: ?*const VkApplicationInfo = null,
+    enabledLayerCount: u32 = 0,
+    ppEnabledLayerNames: ?[*]const [*:0]const u8 = null,
+    enabledExtensionCount: u32 = 0,
+    ppEnabledExtensionNames: ?[*]const [*:0]const u8 = null,
+};
+
+/// Device queue create info
+pub const VkDeviceQueueCreateInfo = extern struct {
+    sType: VkStructureType = .device_queue_create_info,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    queueFamilyIndex: u32 = 0,
+    queueCount: u32 = 0,
+    pQueuePriorities: ?[*]const f32 = null,
+};
+
+/// Physical device features (simplified)
+pub const VkPhysicalDeviceFeatures = extern struct {
+    robustBufferAccess: VkBool32 = VK_FALSE,
+    // ... many more fields, but we use zeroed struct
+    _padding: [224]u8 = [_]u8{0} ** 224, // Pad to correct size
+};
+
+/// Device create info structure
+pub const VkDeviceCreateInfo = extern struct {
+    sType: VkStructureType = .device_create_info,
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    queueCreateInfoCount: u32 = 0,
+    pQueueCreateInfos: ?[*]const VkDeviceQueueCreateInfo = null,
+    enabledLayerCount: u32 = 0,
+    ppEnabledLayerNames: ?[*]const [*:0]const u8 = null,
+    enabledExtensionCount: u32 = 0,
+    ppEnabledExtensionNames: ?[*]const [*:0]const u8 = null,
+    pEnabledFeatures: ?*const VkPhysicalDeviceFeatures = null,
+};
+
+// =============================================================================
+// Swapchain Types (VK_KHR_swapchain)
+// =============================================================================
+
+/// Color space enum
+pub const VkColorSpaceKHR = enum(i32) {
+    srgb_nonlinear_khr = 0,
+    _,
+};
+
+/// Present mode enum
+pub const VkPresentModeKHR = enum(i32) {
+    immediate_khr = 0,
+    mailbox_khr = 1,
+    fifo_khr = 2,
+    fifo_relaxed_khr = 3,
+    _,
+};
+
+/// Surface transform flags
+pub const VkSurfaceTransformFlagsKHR = u32;
+
+/// Composite alpha flags
+pub const VkCompositeAlphaFlagsKHR = u32;
+
+/// Image usage flags
+pub const VkImageUsageFlags = u32;
+
+/// Swapchain create info
+pub const VkSwapchainCreateInfoKHR = extern struct {
+    sType: u32 = 1000001000, // VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    surface: u64 = 0, // VkSurfaceKHR
+    minImageCount: u32 = 0,
+    imageFormat: u32 = 0,
+    imageColorSpace: i32 = 0,
+    imageExtent: VkExtent2D = .{},
+    imageArrayLayers: u32 = 1,
+    imageUsage: u32 = 0,
+    imageSharingMode: u32 = 0,
+    queueFamilyIndexCount: u32 = 0,
+    pQueueFamilyIndices: ?[*]const u32 = null,
+    preTransform: u32 = 0,
+    compositeAlpha: u32 = 0,
+    presentMode: i32 = 0,
+    clipped: VkBool32 = VK_TRUE,
+    oldSwapchain: u64 = 0, // VkSwapchainKHR
+};
+
+/// Present info structure
+pub const VkPresentInfoKHR = extern struct {
+    sType: u32 = 1000001001, // VK_STRUCTURE_TYPE_PRESENT_INFO_KHR
+    pNext: ?*const anyopaque = null,
+    waitSemaphoreCount: u32 = 0,
+    pWaitSemaphores: ?[*]const u64 = null, // VkSemaphore handles
+    swapchainCount: u32 = 0,
+    pSwapchains: [*]const u64 = undefined, // VkSwapchainKHR handles
+    pImageIndices: [*]const u32 = undefined,
+    pResults: ?[*]i32 = null, // VkResult array
+};
+
+// =============================================================================
+// Vulkan 1.4 Promoted Extensions
+// =============================================================================
+
+// VK_KHR_push_descriptor (promoted to core in Vulkan 1.4)
+pub const VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES: u32 = 1000080000;
+pub const VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT: u32 = 0x00000001;
+pub const VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS: u32 = 1;
+
+/// Physical device push descriptor properties (Vulkan 1.4 core)
+pub const VkPhysicalDevicePushDescriptorProperties = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES,
+    pNext: ?*anyopaque = null,
+    maxPushDescriptors: u32 = 0,
+};
+
+// VK_KHR_maintenance6 (promoted to core in Vulkan 1.4)
+pub const VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES: u32 = 1000545000;
+pub const VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_PROPERTIES: u32 = 1000545001;
+pub const VK_STRUCTURE_TYPE_BIND_MEMORY_STATUS: u32 = 1000545002;
+pub const VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO: u32 = 1000545003;
+pub const VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO: u32 = 1000545004;
+pub const VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO: u32 = 1000545005;
+pub const VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_WITH_TEMPLATE_INFO: u32 = 1000545006;
+
+/// Physical device maintenance 6 features (Vulkan 1.4 core)
+pub const VkPhysicalDeviceMaintenance6Features = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES,
+    pNext: ?*anyopaque = null,
+    maintenance6: VkBool32 = VK_FALSE,
+};
+
+/// Physical device maintenance 6 properties (Vulkan 1.4 core)
+pub const VkPhysicalDeviceMaintenance6Properties = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_PROPERTIES,
+    pNext: ?*anyopaque = null,
+    blockTexelViewCompatibleMultipleLayers: VkBool32 = VK_FALSE,
+    maxCombinedImageSamplerDescriptorCount: u32 = 0,
+    fragmentShadingRateClampCombinerInputs: VkBool32 = VK_FALSE,
+};
+
+/// Push descriptor set info (Vulkan 1.4 core)
+pub const VkPushDescriptorSetInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO,
+    pNext: ?*const anyopaque = null,
+    stageFlags: u32 = 0,
+    layout: VkPipelineLayout = undefined,
+    set: u32 = 0,
+    descriptorWriteCount: u32 = 0,
+    pDescriptorWrites: ?[*]const VkWriteDescriptorSet = null,
+};
+
+/// Push constants info (Vulkan 1.4 core)
+pub const VkPushConstantsInfo = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO,
+    pNext: ?*const anyopaque = null,
+    layout: VkPipelineLayout = undefined,
+    stageFlags: u32 = 0,
+    offset: u32 = 0,
+    size: u32 = 0,
+    pValues: ?*const anyopaque = null,
+};
+
+// VK_KHR_dynamic_rendering_local_read (promoted to core in Vulkan 1.4)
+pub const VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES: u32 = 1000232000;
+pub const VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO: u32 = 1000232001;
+pub const VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO: u32 = 1000232002;
+
+/// Physical device dynamic rendering local read features (Vulkan 1.4 core)
+pub const VkPhysicalDeviceDynamicRenderingLocalReadFeatures = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES,
+    pNext: ?*anyopaque = null,
+    dynamicRenderingLocalRead: VkBool32 = VK_FALSE,
+};
+
+// Vulkan 1.4 scalar block layout (promoted from VK_EXT_scalar_block_layout)
+pub const VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES: u32 = 1000221000;
+
+/// Physical device scalar block layout features (Vulkan 1.4 core)
+pub const VkPhysicalDeviceScalarBlockLayoutFeatures = extern struct {
+    sType: u32 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+    pNext: ?*anyopaque = null,
+    scalarBlockLayout: VkBool32 = VK_FALSE,
+};
+
+// =============================================================================
+// Vulkan 1.4 Feature Detection
+// =============================================================================
+
+/// Check if an API version supports Vulkan 1.4 features
+pub fn supportsVulkan14(api_version: u32) bool {
+    return api_version >= VK_API_VERSION_1_4;
+}
+
+/// Check if an API version supports Vulkan 1.3 features
+pub fn supportsVulkan13(api_version: u32) bool {
+    return api_version >= VK_API_VERSION_1_3;
+}
+
+/// Get recommended features string for a given API version
+pub fn getFeatureSetName(api_version: u32) []const u8 {
+    if (api_version >= VK_API_VERSION_1_4) return "Vulkan 1.4 (full)";
+    if (api_version >= VK_API_VERSION_1_3) return "Vulkan 1.3 (compatible)";
+    if (api_version >= VK_API_VERSION_1_2) return "Vulkan 1.2 (limited)";
+    return "Vulkan 1.1 or below (unsupported)";
+}
+
 // =============================================================================
 // Function Pointer Types (use .c for Zig 0.16+)
 // =============================================================================
@@ -702,6 +983,18 @@ pub const PFN_vkCmdBindDescriptorSets = *const fn (VkCommandBuffer, u32, VkPipel
 pub const PFN_vkCmdPushConstants = *const fn (VkCommandBuffer, VkPipelineLayout, u32, u32, u32, *const anyopaque) callconv(.c) void;
 pub const PFN_vkCmdDispatch = *const fn (VkCommandBuffer, u32, u32, u32) callconv(.c) void;
 pub const PFN_vkCmdPipelineBarrier = *const fn (VkCommandBuffer, u32, u32, u32, u32, ?*const anyopaque, u32, ?*const anyopaque, u32, ?[*]const VkImageMemoryBarrier) callconv(.c) void;
+
+// Vulkan 1.4 push descriptors (promoted from VK_KHR_push_descriptor)
+pub const PFN_vkCmdPushDescriptorSet = *const fn (VkCommandBuffer, u32, VkPipelineLayout, u32, u32, [*]const VkWriteDescriptorSet) callconv(.c) void;
+
+// Device lifecycle
+pub const PFN_vkDestroyDevice = *const fn (VkDevice, ?*const VkAllocationCallbacks) callconv(.c) void;
+
+// Swapchain functions (VK_KHR_swapchain)
+pub const PFN_vkCreateSwapchainKHR = *const fn (VkDevice, *const VkSwapchainCreateInfoKHR, ?*const VkAllocationCallbacks, *u64) callconv(.c) i32;
+pub const PFN_vkDestroySwapchainKHR = *const fn (VkDevice, u64, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkAcquireNextImageKHR = *const fn (VkDevice, u64, u64, u64, u64, *u32) callconv(.c) i32;
+pub const PFN_vkQueuePresentKHR = *const fn (VkQueue, *const VkPresentInfoKHR) callconv(.c) i32;
 
 // =============================================================================
 // Dynamic Loader
@@ -792,6 +1085,15 @@ pub const DeviceDispatch = struct {
     vkCmdPushConstants: ?PFN_vkCmdPushConstants = null,
     vkCmdDispatch: ?PFN_vkCmdDispatch = null,
     vkCmdPipelineBarrier: ?PFN_vkCmdPipelineBarrier = null,
+    // Vulkan 1.4 push descriptors
+    vkCmdPushDescriptorSet: ?PFN_vkCmdPushDescriptorSet = null,
+    // Device lifecycle
+    vkDestroyDevice: ?PFN_vkDestroyDevice = null,
+    // Swapchain functions
+    vkCreateSwapchainKHR: ?PFN_vkCreateSwapchainKHR = null,
+    vkDestroySwapchainKHR: ?PFN_vkDestroySwapchainKHR = null,
+    vkAcquireNextImageKHR: ?PFN_vkAcquireNextImageKHR = null,
+    vkQueuePresentKHR: ?PFN_vkQueuePresentKHR = null,
 
     pub fn init(device: VkDevice, getDeviceProcAddr: PFN_vkGetDeviceProcAddr) DeviceDispatch {
         return .{
@@ -831,6 +1133,15 @@ pub const DeviceDispatch = struct {
             .vkCmdPushConstants = @ptrCast(getDeviceProcAddr(device, "vkCmdPushConstants")),
             .vkCmdDispatch = @ptrCast(getDeviceProcAddr(device, "vkCmdDispatch")),
             .vkCmdPipelineBarrier = @ptrCast(getDeviceProcAddr(device, "vkCmdPipelineBarrier")),
+            // Vulkan 1.4 push descriptors
+            .vkCmdPushDescriptorSet = @ptrCast(getDeviceProcAddr(device, "vkCmdPushDescriptorSet")),
+            // Device lifecycle
+            .vkDestroyDevice = @ptrCast(getDeviceProcAddr(device, "vkDestroyDevice")),
+            // Swapchain functions
+            .vkCreateSwapchainKHR = @ptrCast(getDeviceProcAddr(device, "vkCreateSwapchainKHR")),
+            .vkDestroySwapchainKHR = @ptrCast(getDeviceProcAddr(device, "vkDestroySwapchainKHR")),
+            .vkAcquireNextImageKHR = @ptrCast(getDeviceProcAddr(device, "vkAcquireNextImageKHR")),
+            .vkQueuePresentKHR = @ptrCast(getDeviceProcAddr(device, "vkQueuePresentKHR")),
         };
     }
 
@@ -844,6 +1155,11 @@ pub const DeviceDispatch = struct {
     pub fn hasDiagnosticCheckpoints(self: *const DeviceDispatch) bool {
         return self.vkCmdSetCheckpointNV != null and
             self.vkGetQueueCheckpointDataNV != null;
+    }
+
+    /// Check if Vulkan 1.4 push descriptors are supported
+    pub fn hasPushDescriptors(self: *const DeviceDispatch) bool {
+        return self.vkCmdPushDescriptorSet != null;
     }
 
     pub fn hasComputePipelines(self: *const DeviceDispatch) bool {

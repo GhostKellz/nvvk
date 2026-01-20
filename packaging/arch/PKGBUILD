@@ -1,0 +1,70 @@
+# Maintainer: Your Name <your.email@example.com>
+pkgname=nvvk
+pkgver=0.4.1
+pkgrel=1
+pkgdesc="NVIDIA Vulkan Extensions Library for Linux Gaming"
+arch=('x86_64')
+url="https://github.com/user/nvvk"
+license=('MIT')
+depends=(
+    'vulkan-icd-loader'
+    'nvidia-utils>=590'
+)
+makedepends=(
+    'zig>=0.16'
+    'vulkan-headers'
+)
+optdepends=(
+    'nvidia-settings: for GPU configuration'
+    'vulkan-tools: for testing'
+    'vulkan-validation-layers: for debugging'
+)
+provides=('libnvvk.so' 'libnvvk_layer.so' 'libnvvk_layer_ll.so')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/user/$pkgname/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname-$pkgver"
+    zig build -Doptimize=ReleaseFast
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    zig build test
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+
+    # Install library
+    install -Dm755 zig-out/lib/libnvvk.so "$pkgdir/usr/lib/libnvvk.so"
+
+    # Install Vulkan layers
+    install -Dm755 zig-out/lib/libnvvk_layer.so "$pkgdir/usr/lib/libnvvk_layer.so"
+    install -Dm755 zig-out/lib/libnvvk_layer_ll.so "$pkgdir/usr/lib/libnvvk_layer_ll.so"
+
+    # Install layer manifests
+    install -Dm644 VK_LAYER_NV_frame_generation.json \
+        "$pkgdir/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_frame_generation.json"
+    install -Dm644 VK_LAYER_NV_low_latency.json \
+        "$pkgdir/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_low_latency.json"
+
+    # Fix library paths in manifests
+    sed -i 's|./libnvvk_layer.so|/usr/lib/libnvvk_layer.so|' \
+        "$pkgdir/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_frame_generation.json"
+    sed -i 's|./libnvvk_layer_ll.so|/usr/lib/libnvvk_layer_ll.so|' \
+        "$pkgdir/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_low_latency.json"
+
+    # Install headers
+    install -Dm644 zig-out/include/nvvk.h "$pkgdir/usr/include/nvvk.h"
+    install -Dm644 zig-out/include/nvvk_low_latency.h "$pkgdir/usr/include/nvvk_low_latency.h"
+    install -Dm644 zig-out/include/nvvk_diagnostics.h "$pkgdir/usr/include/nvvk_diagnostics.h"
+
+    # Install docs
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 TODO.md "$pkgdir/usr/share/doc/$pkgname/TODO.md"
+
+    # Install license
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE" || \
+        echo "MIT License" > "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

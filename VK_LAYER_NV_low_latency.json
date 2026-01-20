@@ -1,0 +1,48 @@
+{
+    "file_format_version": "1.2.0",
+    "layer": {
+        "name": "VK_LAYER_NV_low_latency",
+        "type": "GLOBAL",
+        "library_path": "./libnvvk_layer_ll.so",
+        "api_version": "1.4.0",
+        "implementation_version": "1",
+        "description": "NVIDIA Reflex Low Latency Layer - Automatic latency marker injection",
+        "introduction": "This layer automatically injects NVIDIA Reflex latency markers for reduced input-to-display latency.",
+        "url": "https://github.com/user/nvvk",
+        "platforms": ["linux"],
+        "status": "stable",
+        "functions": {
+            "vkGetInstanceProcAddr": "nvvk_ll_vkGetInstanceProcAddr",
+            "vkGetDeviceProcAddr": "nvvk_ll_vkGetDeviceProcAddr"
+        },
+        "instance_extensions": [],
+        "device_extensions": [],
+        "enable_environment": {
+            "NVVK_LOW_LATENCY_ENABLE": "1"
+        },
+        "disable_environment": {
+            "NVVK_LOW_LATENCY_DISABLE": "1"
+        },
+        "pre_instance_functions": {
+            "vkEnumerateInstanceLayerProperties": "nvvk_ll_vkEnumerateInstanceLayerProperties",
+            "vkEnumerateInstanceExtensionProperties": "nvvk_ll_vkEnumerateInstanceExtensionProperties"
+        },
+        "component_layers": [],
+        "features": {
+            "low_latency_mode": {
+                "description": "Enable NVIDIA Reflex low latency mode",
+                "enabled_by_default": true,
+                "environment_variable": "NVVK_LOW_LATENCY_ENABLED"
+            },
+            "boost_mode": {
+                "description": "Enable GPU boost for lower latency (higher power)",
+                "enabled_by_default": false,
+                "environment_variable": "NVVK_LOW_LATENCY_BOOST"
+            },
+            "auto_markers": {
+                "description": "Automatically inject latency markers at submit/present",
+                "enabled_by_default": true
+            }
+        }
+    }
+}

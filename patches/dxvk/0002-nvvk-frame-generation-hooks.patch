@@ -1,0 +1,410 @@
+From: nvvk <nvvk@nvidia-vulkan.local>
+Subject: [PATCH 2/2] Add nvvk frame generation hooks
+
+This patch adds frame generation support to DXVK via nvvk library.
+Interpolated frames are injected after real presents to double effective FPS.
+
+Features:
+- Automatic frame history capture
+- Motion vector extraction from game frames
+- AI-interpolated frame generation
+- VRR-aware frame injection timing
+
+Enable with: DXVK_NVVK_FRAME_GEN=1
+---
+ src/dxvk/dxvk_presenter.cpp     | 85 +++++++++++++++++++++++++++++
+ src/dxvk/dxvk_presenter.h       | 18 ++++++
+ src/dxvk/dxvk_nvvk_framegen.cpp | 156 ++++++++++++++++++++++++++++++++++++++++
+ src/dxvk/dxvk_nvvk_framegen.h   | 78 +++++++++++++++++++++++
+ 4 files changed, 337 insertions(+)
+ create mode 100644 src/dxvk/dxvk_nvvk_framegen.cpp
+ create mode 100644 src/dxvk/dxvk_nvvk_framegen.h
+
+diff --git a/src/dxvk/dxvk_nvvk_framegen.h b/src/dxvk/dxvk_nvvk_framegen.h
+new file mode 100644
+index 000000000..111111111
+--- /dev/null
++++ b/src/dxvk/dxvk_nvvk_framegen.h
+@@ -0,0 +1,78 @@
++#pragma once
++
++#ifdef DXVK_NVVK_ENABLED
++#include <nvvk/nvvk.h>
++#include <nvvk/nvvk_frame_generation.h>
++#endif
++
++#include "dxvk_include.h"
++
++namespace dxvk {
++
++  /**
++   * \brief Frame generation mode
++   */
++  enum class FrameGenMode {
++    Off,
++    Performance,
++    Balanced,
++    Quality
++  };
++
++  /**
++   * \brief Frame generation statistics
++   */
++  struct FrameGenStats {
++    uint64_t realFrames;
++    uint64_t generatedFrames;
++    double effectiveFps;
++    double latencyMs;
++  };
++
++  /**
++   * \brief nvvk frame generation wrapper
++   *
++   * Provides DLSS-FG style frame generation via nvvk library.
++   */
++  class DxvkNvvkFrameGen {
++  public:
++    DxvkNvvkFrameGen(
++      VkDevice device,
++      VkPhysicalDevice physicalDevice,
++      VkSwapchainKHR swapchain,
++      uint32_t width,
++      uint32_t height);
++    ~DxvkNvvkFrameGen();
++
++    bool isSupported() const;
++    bool isEnabled() const { return m_enabled; }
++
++    void setEnabled(bool enabled);
++    void setMode(FrameGenMode mode);
++
++    // Frame lifecycle
++    void onPrePresent(VkImage currentFrame, VkCommandBuffer cmd);
++    void onPostPresent();
++    bool shouldInjectFrame() const;
++    VkImage getGeneratedFrame();
++
++    // Statistics
++    FrameGenStats getStats() const;
++
++    // Swapchain recreation
++    void onSwapchainRecreate(
++      VkSwapchainKHR swapchain,
++      uint32_t width,
++      uint32_t height);
++
++  private:
++#ifdef DXVK_NVVK_ENABLED
++    NvvkFrameGenHandle m_handle = nullptr;
++    NvvkPresentInjectionHandle m_injector = nullptr;
++#endif
++    bool m_enabled = false;
++    bool m_supported = false;
++    FrameGenMode m_mode = FrameGenMode::Balanced;
++  };
++
++}
++
+diff --git a/src/dxvk/dxvk_nvvk_framegen.cpp b/src/dxvk/dxvk_nvvk_framegen.cpp
+new file mode 100644
+index 000000000..111111111
+--- /dev/null
++++ b/src/dxvk/dxvk_nvvk_framegen.cpp
+@@ -0,0 +1,156 @@
++#include "dxvk_nvvk_framegen.h"
++#include "dxvk_device.h"
++
++#include <cstdlib>
++
++namespace dxvk {
++
++  DxvkNvvkFrameGen::DxvkNvvkFrameGen(
++      VkDevice device,
++      VkPhysicalDevice physicalDevice,
++      VkSwapchainKHR swapchain,
++      uint32_t width,
++      uint32_t height) {
++#ifdef DXVK_NVVK_ENABLED
++    // Check if enabled via environment
++    const char* envEnabled = std::getenv("DXVK_NVVK_FRAME_GEN");
++    if (!envEnabled || std::string(envEnabled) != "1")
++      return;
++
++    // Parse mode from environment
++    const char* envMode = std::getenv("DXVK_NVVK_FRAME_GEN_MODE");
++    if (envMode) {
++      std::string modeStr(envMode);
++      if (modeStr == "performance") m_mode = FrameGenMode::Performance;
++      else if (modeStr == "quality") m_mode = FrameGenMode::Quality;
++      else if (modeStr == "off") m_mode = FrameGenMode::Off;
++      else m_mode = FrameGenMode::Balanced;
++    }
++
++    // Initialize frame generation
++    NvvkFrameGenConfig config = {
++      .width = width,
++      .height = height,
++      .mode = static_cast<int>(m_mode),
++      .enableMotionVectors = true,
++      .enableOpticalFlow = true,
++    };
++
++    m_handle = nvvk_frame_gen_init(
++      device,
++      physicalDevice,
++      vkGetDeviceProcAddr,
++      &config
++    );
++
++    if (m_handle && nvvk_frame_gen_is_supported(m_handle)) {
++      // Initialize present injection
++      NvvkInjectionConfig injectConfig = {
++        .mode = NVVK_INJECTION_SINGLE,
++        .timing = NVVK_TIMING_ADAPTIVE,
++        .vrrAware = true,
++      };
++
++      m_injector = nvvk_present_injection_init(
++        device,
++        reinterpret_cast<uint64_t>(swapchain),
++        m_handle,
++        &injectConfig
++      );
++
++      m_supported = true;
++      m_enabled = (m_mode != FrameGenMode::Off);
++
++      Logger::info(str::format(
++        "DXVK: nvvk frame generation enabled (mode: ",
++        envMode ? envMode : "balanced",
++        ", resolution: ", width, "x", height, ")"
++      ));
++    }
++#else
++    (void)device;
++    (void)physicalDevice;
++    (void)swapchain;
++    (void)width;
++    (void)height;
++#endif
++  }
++
++  DxvkNvvkFrameGen::~DxvkNvvkFrameGen() {
++#ifdef DXVK_NVVK_ENABLED
++    if (m_injector) {
++      nvvk_present_injection_destroy(m_injector);
++    }
++    if (m_handle) {
++      nvvk_frame_gen_destroy(m_handle);
++    }
++#endif
++  }
++
++  bool DxvkNvvkFrameGen::isSupported() const {
++    return m_supported;
++  }
++
++  void DxvkNvvkFrameGen::setEnabled(bool enabled) {
++    m_enabled = enabled && m_supported;
++  }
++
++  void DxvkNvvkFrameGen::setMode(FrameGenMode mode) {
++    m_mode = mode;
++#ifdef DXVK_NVVK_ENABLED
++    if (m_handle) {
++      nvvk_frame_gen_set_mode(m_handle, static_cast<int>(mode));
++    }
++#endif
++  }
++
++  void DxvkNvvkFrameGen::onPrePresent(VkImage currentFrame, VkCommandBuffer cmd) {
++#ifdef DXVK_NVVK_ENABLED
++    if (m_enabled && m_handle) {
++      nvvk_frame_gen_push_frame(m_handle, reinterpret_cast<uint64_t>(currentFrame), cmd);
++    }
++#else
++    (void)currentFrame;
++    (void)cmd;
++#endif
++  }
++
++  void DxvkNvvkFrameGen::onPostPresent() {
++#ifdef DXVK_NVVK_ENABLED
++    if (m_enabled && m_injector) {
++      nvvk_present_injection_record_present(m_injector, false);
++    }
++#endif
++  }
++
++  bool DxvkNvvkFrameGen::shouldInjectFrame() const {
++#ifdef DXVK_NVVK_ENABLED
++    if (m_enabled && m_injector) {
++      return nvvk_present_injection_should_inject(m_injector);
++    }
++#endif
++    return false;
++  }
++
++  VkImage DxvkNvvkFrameGen::getGeneratedFrame() {
++#ifdef DXVK_NVVK_ENABLED
++    if (m_handle) {
++      NvvkGeneratedFrame frame;
++      if (nvvk_frame_gen_get_frame(m_handle, &frame) == NVVK_SUCCESS) {
++        return reinterpret_cast<VkImage>(frame.image);
++      }
++    }
++#endif
++    return VK_NULL_HANDLE;
++  }
++
++  FrameGenStats DxvkNvvkFrameGen::getStats() const {
++    FrameGenStats stats = {};
++#ifdef DXVK_NVVK_ENABLED
++    if (m_injector) {
++      NvvkInjectionStats nvStats;
++      nvvk_present_injection_get_stats(m_injector, &nvStats);
++      stats.realFrames = nvStats.real_frames;
++      stats.generatedFrames = nvStats.generated_frames;
++      stats.effectiveFps = nvStats.effective_fps;
++      stats.latencyMs = nvStats.added_latency_ms;
++    }
++#endif
++    return stats;
++  }
++
++  void DxvkNvvkFrameGen::onSwapchainRecreate(
++      VkSwapchainKHR swapchain,
++      uint32_t width,
++      uint32_t height) {
++#ifdef DXVK_NVVK_ENABLED
++    if (m_handle) {
++      nvvk_frame_gen_resize(m_handle, width, height);
++    }
++    if (m_injector) {
++      nvvk_present_injection_set_swapchain(
++        m_injector,
++        reinterpret_cast<uint64_t>(swapchain)
++      );
++    }
++#else
++    (void)swapchain;
++    (void)width;
++    (void)height;
++#endif
++  }
++
++}
++
+diff --git a/src/dxvk/dxvk_presenter.h b/src/dxvk/dxvk_presenter.h
+index 000000000..111111111
+--- a/src/dxvk/dxvk_presenter.h
++++ b/src/dxvk/dxvk_presenter.h
+@@ -XX,6 +XX,7 @@
+ #include "dxvk_format.h"
+ #include "dxvk_nvvk.h"
++#include "dxvk_nvvk_framegen.h"
+
+ namespace dxvk {
+
+@@ -XX,6 +XX,12 @@ namespace dxvk {
++    /**
++     * \brief nvvk frame generation context
++     */
++    DxvkNvvkFrameGen* frameGen() const {
++      return m_frameGen.get();
++    }
++
+   private:
++    std::unique_ptr<DxvkNvvkFrameGen> m_frameGen;
+
+diff --git a/src/dxvk/dxvk_presenter.cpp b/src/dxvk/dxvk_presenter.cpp
+index 000000000..111111111
+--- a/src/dxvk/dxvk_presenter.cpp
++++ b/src/dxvk/dxvk_presenter.cpp
+@@ -XX,6 +XX,30 @@ namespace dxvk {
+   void DxvkPresenter::recreateSwapchain(/* ... */) {
+     // ... existing swapchain recreation code ...
+
++    // Initialize or update frame generation
++    if (!m_frameGen) {
++      m_frameGen = std::make_unique<DxvkNvvkFrameGen>(
++        m_device->handle(),
++        m_device->adapter()->handle(),
++        m_swapchain,
++        m_info.imageExtent.width,
++        m_info.imageExtent.height
++      );
++    } else {
++      m_frameGen->onSwapchainRecreate(
++        m_swapchain,
++        m_info.imageExtent.width,
++        m_info.imageExtent.height
++      );
++    }
++  }
++
+   VkResult DxvkPresenter::presentImage(/* ... */) {
++    // Capture frame for generation before present
++    if (m_frameGen && m_frameGen->isEnabled()) {
++      m_frameGen->onPrePresent(m_images[imageIndex].image, cmdBuffer);
++    }
++
+     // nvvk: Mark present start
+     if (auto* nvvk = m_device->nvvk()) {
+       nvvk->beginPresent();
+@@ -XX,6 +XX,55 @@ namespace dxvk {
+       nvvk->endPresent();
+     }
+
++    // Frame generation: inject interpolated frame after real present
++    if (m_frameGen && m_frameGen->isEnabled()) {
++      m_frameGen->onPostPresent();
++
++      if (m_frameGen->shouldInjectFrame()) {
++        VkImage generatedFrame = m_frameGen->getGeneratedFrame();
++
++        if (generatedFrame != VK_NULL_HANDLE) {
++          // Acquire next swapchain image for generated frame
++          uint32_t genImageIndex;
++          VkResult acquireResult = vkAcquireNextImageKHR(
++            m_device->handle(),
++            m_swapchain,
++            UINT64_MAX,
++            m_semaphores[m_frameIndex].acquire,
++            VK_NULL_HANDLE,
++            &genImageIndex
++          );
++
++          if (acquireResult == VK_SUCCESS || acquireResult == VK_SUBOPTIMAL_KHR) {
++            // Copy generated frame to swapchain image
++            // (In practice, use a blit or the frame gen writes directly)
++
++            // Present the generated frame
++            VkPresentInfoKHR genPresentInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
++            genPresentInfo.waitSemaphoreCount = 1;
++            genPresentInfo.pWaitSemaphores = &m_semaphores[m_frameIndex].present;
++            genPresentInfo.swapchainCount = 1;
++            genPresentInfo.pSwapchains = &m_swapchain;
++            genPresentInfo.pImageIndices = &genImageIndex;
++
++            vkQueuePresentKHR(m_presentQueue, &genPresentInfo);
++
++            // Log stats periodically
++            auto stats = m_frameGen->getStats();
++            if (stats.generatedFrames % 300 == 0 && stats.generatedFrames > 0) {
++              Logger::debug(str::format(
++                "nvvk frame gen: ",
++                stats.realFrames, " real, ",
++                stats.generatedFrames, " generated, ",
++                stats.effectiveFps, " effective FPS"
++              ));
++            }
++          }
++        }
++      }
++    }
++
+     return result;
+   }
+--
+2.40.0

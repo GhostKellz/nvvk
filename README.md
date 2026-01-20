@@ -10,6 +10,8 @@ A Zig library providing optimized NVIDIA Vulkan extension wrappers with C ABI ex
 ![NVIDIA](https://img.shields.io/badge/NVIDIA-590%2B-76B900?style=flat&logo=nvidia&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
+> **⚠️ Experimental Project** - This project is under active development and not fully tested. Use at your own risk.
+
 ## Overview
 
 nvvk exposes NVIDIA-specific Vulkan extensions that are often underutilized on Linux:

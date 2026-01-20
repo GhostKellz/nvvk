@@ -1,0 +1,44 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	zig build -Doptimize=ReleaseFast
+
+override_dh_auto_test:
+	zig build test
+
+override_dh_auto_install:
+	# Install library
+	install -D -m 755 zig-out/lib/libnvvk.so \
+		debian/libnvvk/usr/lib/x86_64-linux-gnu/libnvvk.so
+
+	# Install Vulkan layer libraries
+	install -D -m 755 zig-out/lib/libnvvk_layer.so \
+		debian/nvvk-vulkan-layers/usr/lib/x86_64-linux-gnu/libnvvk_layer.so
+	install -D -m 755 zig-out/lib/libnvvk_layer_ll.so \
+		debian/nvvk-vulkan-layers/usr/lib/x86_64-linux-gnu/libnvvk_layer_ll.so
+
+	# Install layer manifests (with fixed paths)
+	install -D -m 644 VK_LAYER_NV_frame_generation.json \
+		debian/nvvk-vulkan-layers/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_frame_generation.json
+	install -D -m 644 VK_LAYER_NV_low_latency.json \
+		debian/nvvk-vulkan-layers/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_low_latency.json
+	sed -i 's|./libnvvk_layer.so|/usr/lib/x86_64-linux-gnu/libnvvk_layer.so|' \
+		debian/nvvk-vulkan-layers/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_frame_generation.json
+	sed -i 's|./libnvvk_layer_ll.so|/usr/lib/x86_64-linux-gnu/libnvvk_layer_ll.so|' \
+		debian/nvvk-vulkan-layers/usr/share/vulkan/implicit_layer.d/VK_LAYER_NV_low_latency.json
+
+	# Install headers
+	install -D -m 644 zig-out/include/nvvk.h \
+		debian/libnvvk-dev/usr/include/nvvk.h
+	install -D -m 644 zig-out/include/nvvk_low_latency.h \
+		debian/libnvvk-dev/usr/include/nvvk_low_latency.h
+	install -D -m 644 zig-out/include/nvvk_diagnostics.h \
+		debian/libnvvk-dev/usr/include/nvvk_diagnostics.h
+
+override_dh_auto_clean:
+	rm -rf zig-out .zig-cache

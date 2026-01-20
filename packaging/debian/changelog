@@ -1,0 +1,23 @@
+nvvk (0.4.1-1) unstable; urgency=medium
+
+  * Full Zig 0.16.0 compatibility
+  * Vulkan 1.4 support with backwards compatibility
+  * Add VK_LAYER_NV_frame_generation for automatic frame interpolation
+  * Add VK_LAYER_NV_low_latency for automatic NVIDIA Reflex
+  * Add validation layer integration
+  * Add push descriptor support (Vulkan 1.4 promoted)
+  * DXVK and vkd3d-proton integration patches
+  * Async sleep with callback support
+  * Comprehensive C API headers
+
+ -- Your Name <your.email@example.com>  Mon, 20 Jan 2026 12:00:00 +0000
+
+nvvk (0.4.0-1) unstable; urgency=medium
+
+  * Initial release.
+  * VK_NV_low_latency2 support (NVIDIA Reflex)
+  * VK_NV_optical_flow support
+  * Frame generation pipeline
+  * Diagnostic checkpoints support
+
+ -- Your Name <your.email@example.com>  Sun, 19 Jan 2026 12:00:00 +0000

@@ -428,6 +428,7 @@ pub const NvvkGeneratedFrame = extern struct {
 
 const FrameGenHandle = struct {
     ctx: nvvk.FrameGenContext,
+    dispatch: nvvk.DeviceDispatch,
 };
 
 /// Initialize frame generation context
@@ -436,6 +437,7 @@ export fn nvvk_frame_gen_init(
     width: u32,
     height: u32,
     mode: NvvkFrameGenMode,
+    get_device_proc_addr: ?*const fn (*anyopaque, [*:0]const u8) callconv(.c) ?*const fn () callconv(.c) void,
 ) ?*FrameGenHandle {
     const allocator = gpa.allocator();
 
@@ -455,7 +457,18 @@ export fn nvvk_frame_gen_init(
     };
 
     const vk_device: nvvk.VkDevice = @ptrCast(device);
-    handle.ctx = nvvk.FrameGenContext.init(vk_device, config, null, null, allocator);
+
+    // Initialize dispatch table if proc addr provided
+    if (get_device_proc_addr) |proc_addr| {
+        handle.dispatch = nvvk.DeviceDispatch.init(vk_device, @ptrCast(proc_addr));
+        handle.ctx = nvvk.FrameGenContext.init(vk_device, config, null, &handle.dispatch, allocator);
+    } else {
+        // No dispatch provided - context will have limited functionality
+        handle.dispatch = nvvk.DeviceDispatch{
+            .device = vk_device,
+        };
+        handle.ctx = nvvk.FrameGenContext.init(vk_device, config, null, null, allocator);
+    }
 
     return handle;
 }

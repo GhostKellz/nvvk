@@ -1,0 +1,47 @@
+{
+    "file_format_version": "1.2.0",
+    "layer": {
+        "name": "VK_LAYER_NV_frame_generation",
+        "type": "GLOBAL",
+        "library_path": "./libnvvk_layer.so",
+        "api_version": "1.4.0",
+        "implementation_version": "1",
+        "description": "NVIDIA Frame Generation Layer - Interpolates frames to increase effective framerate",
+        "introduction": "This layer intercepts vkQueuePresentKHR to inject AI-generated interpolated frames.",
+        "url": "https://github.com/user/nvvk",
+        "platforms": ["linux"],
+        "status": "development",
+        "functions": {
+            "vkGetInstanceProcAddr": "nvvk_vkGetInstanceProcAddr",
+            "vkGetDeviceProcAddr": "nvvk_vkGetDeviceProcAddr"
+        },
+        "instance_extensions": [],
+        "device_extensions": [],
+        "enable_environment": {
+            "NVVK_FRAME_GEN_ENABLE": "1"
+        },
+        "disable_environment": {
+            "NVVK_FRAME_GEN_DISABLE": "1"
+        },
+        "pre_instance_functions": {
+            "vkEnumerateInstanceLayerProperties": "nvvk_vkEnumerateInstanceLayerProperties",
+            "vkEnumerateInstanceExtensionProperties": "nvvk_vkEnumerateInstanceExtensionProperties"
+        },
+        "component_layers": [],
+        "features": {
+            "frame_generation": {
+                "description": "Generate interpolated frames to double effective framerate",
+                "enabled_by_default": false,
+                "environment_variable": "NVVK_FRAME_GEN_ENABLED"
+            },
+            "vrr_aware": {
+                "description": "VRR/G-Sync aware timing for frame injection",
+                "enabled_by_default": true
+            },
+            "latency_compensation": {
+                "description": "Automatic latency compensation with Reflex integration",
+                "enabled_by_default": true
+            }
+        }
+    }
+}

@@ -9,6 +9,7 @@
 const std = @import("std");
 const vk = @import("vulkan.zig");
 const optical_flow = @import("optical_flow.zig");
+const frame_synthesis = @import("frame_synthesis.zig");
 
 // =============================================================================
 // Types
@@ -60,8 +61,10 @@ pub const MotionVectorContext = struct {
     // Configuration
     config: MotionVectorConfig,
 
-    // Dispatch table
+    // Dispatch tables
     dispatch: ?*const vk.DeviceDispatch,
+    physical_device: ?vk.VkPhysicalDevice,
+    instance_dispatch: ?*const vk.InstanceDispatch,
 
     pub const FrameImage = struct {
         image: vk.VkImage,
@@ -87,6 +90,8 @@ pub const MotionVectorContext = struct {
             .current_frame_idx = 0,
             .config = config,
             .dispatch = dispatch,
+            .physical_device = null,
+            .instance_dispatch = null,
         };
     }
 
@@ -161,7 +166,7 @@ pub const MotionVectorContext = struct {
         }
 
         // Execute optical flow
-        flow.execute(cmd, null, .{});
+        try flow.execute(cmd, null, .{});
     }
 
     /// Get the computed motion vectors
@@ -185,10 +190,15 @@ pub const MotionVectorContext = struct {
     pub fn createResources(
         self: *MotionVectorContext,
         physical_device: vk.VkPhysicalDevice,
+        instance_dispatch: *const vk.InstanceDispatch,
         get_instance_proc_addr: vk.PFN_vkGetInstanceProcAddr,
         get_device_proc_addr: vk.PFN_vkGetDeviceProcAddr,
     ) !void {
         const dispatch = self.dispatch orelse return error.NotInitialized;
+
+        // Store for later use in memory allocation
+        self.physical_device = physical_device;
+        self.instance_dispatch = instance_dispatch;
 
         // Calculate motion vector grid dimensions
         const mv_dims = calculateMVDimensions(
@@ -222,8 +232,8 @@ pub const MotionVectorContext = struct {
         );
 
         // Create motion vector images
-        // Format: R16G16_SFIXED for S10.5 motion vectors
-        const mv_format: u32 = 97; // VK_FORMAT_R16G16_SFLOAT (closest available)
+        // Format: R16G16_SFLOAT for motion vectors (closest to S10.5 fixed-point)
+        const mv_format: u32 = vk.VK_FORMAT_R16G16_SFLOAT;
 
         // Forward flow image (required)
         const forward_image = try self.createFlowImage(dispatch, mv_dims.width, mv_dims.height, mv_format);
@@ -237,8 +247,8 @@ pub const MotionVectorContext = struct {
         // Cost map (optional, for confidence weighting)
         var cost_image: ?struct { image: vk.VkImage, view: vk.VkImageView, memory: vk.VkDeviceMemory } = null;
         if (self.config.enable_cost) {
-            // Cost map is single channel
-            cost_image = try self.createFlowImage(dispatch, mv_dims.width, mv_dims.height, 9); // VK_FORMAT_R8_UNORM
+            // Cost map is single channel (R8_UNORM for 0-255 cost values)
+            cost_image = try self.createFlowImage(dispatch, mv_dims.width, mv_dims.height, vk.VK_FORMAT_R8_UNORM);
         }
 
         self.mv_buffer = MotionVectorBuffer{
@@ -268,6 +278,8 @@ pub const MotionVectorContext = struct {
         format: u32,
     ) !struct { image: vk.VkImage, view: vk.VkImageView, memory: vk.VkDeviceMemory } {
         const device = self.device;
+        const physical_device = self.physical_device orelse return error.NoPhysicalDevice;
+        const instance_dispatch = self.instance_dispatch orelse return error.NoInstanceDispatch;
 
         const create_image = dispatch.vkCreateImage orelse return error.FunctionNotFound;
         const create_image_view = dispatch.vkCreateImageView orelse return error.FunctionNotFound;
@@ -277,16 +289,16 @@ pub const MotionVectorContext = struct {
 
         // Create image
         const image_info = vk.VkImageCreateInfo{
-            .imageType = 1, // VK_IMAGE_TYPE_2D
+            .imageType = vk.VK_IMAGE_TYPE_2D,
             .format = format,
             .extent = .{ .width = width, .height = height, .depth = 1 },
             .mipLevels = 1,
             .arrayLayers = 1,
-            .samples = 1, // VK_SAMPLE_COUNT_1_BIT
-            .tiling = 0, // VK_IMAGE_TILING_OPTIMAL
-            .usage = 0x18, // VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
-            .sharingMode = 0, // VK_SHARING_MODE_EXCLUSIVE
-            .initialLayout = 0, // VK_IMAGE_LAYOUT_UNDEFINED
+            .samples = vk.VK_SAMPLE_COUNT_1_BIT,
+            .tiling = vk.VK_IMAGE_TILING_OPTIMAL,
+            .usage = vk.VK_IMAGE_USAGE_STORAGE_BIT | vk.VK_IMAGE_USAGE_SAMPLED_BIT,
+            .sharingMode = vk.VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = vk.VK_IMAGE_LAYOUT_UNDEFINED,
         };
 
         var image: vk.VkImage = undefined;
@@ -296,10 +308,18 @@ pub const MotionVectorContext = struct {
         var mem_req: vk.VkMemoryRequirements = undefined;
         get_mem_req(device, image, &mem_req);
 
+        // Find suitable device-local memory type
+        const mem_type = try frame_synthesis.findMemoryType(
+            physical_device,
+            instance_dispatch,
+            mem_req.memoryTypeBits,
+            vk.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        );
+
         // Allocate memory (device local)
         const alloc_info = vk.VkMemoryAllocateInfo{
             .allocationSize = mem_req.size,
-            .memoryTypeIndex = 0, // TODO: Find proper device local memory type
+            .memoryTypeIndex = mem_type,
         };
 
         var memory: vk.VkDeviceMemory = undefined;
@@ -311,11 +331,11 @@ pub const MotionVectorContext = struct {
         // Create image view
         const view_info = vk.VkImageViewCreateInfo{
             .image = image,
-            .viewType = 1, // VK_IMAGE_VIEW_TYPE_2D
+            .viewType = vk.VK_IMAGE_VIEW_TYPE_2D,
             .format = format,
             .components = .{},
             .subresourceRange = .{
-                .aspectMask = 1, // VK_IMAGE_ASPECT_COLOR_BIT
+                .aspectMask = vk.VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
                 .levelCount = 1,
                 .baseArrayLayer = 0,
