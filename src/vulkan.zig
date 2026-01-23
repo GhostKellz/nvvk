@@ -410,6 +410,12 @@ pub const VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT: u32 = 0x00000001;
 pub const VK_PIPELINE_BIND_POINT_COMPUTE: u32 = 1;
 pub const VK_ACCESS_SHADER_READ_BIT: u32 = 0x00000020;
 pub const VK_ACCESS_SHADER_WRITE_BIT: u32 = 0x00000040;
+pub const VK_ACCESS_TRANSFER_READ_BIT: u32 = 0x00000800;
+pub const VK_ACCESS_TRANSFER_WRITE_BIT: u32 = 0x00001000;
+
+// Additional pipeline stages
+pub const VK_PIPELINE_STAGE_TRANSFER_BIT: u32 = 0x00001000;
+pub const VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT: u32 = 0x00002000;
 
 /// Descriptor set layout binding
 pub const VkDescriptorSetLayoutBinding = extern struct {
@@ -483,6 +489,46 @@ pub const VkExtent3D = extern struct {
     width: u32,
     height: u32,
     depth: u32,
+};
+
+/// Offset 3D
+pub const VkOffset3D = extern struct {
+    x: i32 = 0,
+    y: i32 = 0,
+    z: i32 = 0,
+};
+
+/// Image filter for blit operations
+pub const VkFilter = enum(i32) {
+    nearest = 0,
+    linear = 1,
+    cubic_ext = 1000015000, // VK_EXT_filter_cubic
+    _,
+};
+
+/// Image subresource layers (for copy/blit)
+pub const VkImageSubresourceLayers_Copy = extern struct {
+    aspectMask: u32,
+    mipLevel: u32,
+    baseArrayLayer: u32,
+    layerCount: u32,
+};
+
+/// Image blit region
+pub const VkImageBlit = extern struct {
+    srcSubresource: VkImageSubresourceLayers_Copy,
+    srcOffsets: [2]VkOffset3D,
+    dstSubresource: VkImageSubresourceLayers_Copy,
+    dstOffsets: [2]VkOffset3D,
+};
+
+/// Image copy region
+pub const VkImageCopy = extern struct {
+    srcSubresource: VkImageSubresourceLayers_Copy,
+    srcOffset: VkOffset3D,
+    dstSubresource: VkImageSubresourceLayers_Copy,
+    dstOffset: VkOffset3D,
+    extent: VkExtent3D,
 };
 
 /// Image create info
@@ -644,6 +690,100 @@ pub const VkPipelineCache = ?*opaque {};
 
 /// Fence handle
 pub const VkFence = u64;
+
+/// Command pool handle
+pub const VkCommandPool = *opaque {};
+
+// =============================================================================
+// Command Buffer Types
+// =============================================================================
+
+/// Command pool create flags
+pub const VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: u32 = 0x00000001;
+pub const VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: u32 = 0x00000002;
+
+/// Command buffer level
+pub const VkCommandBufferLevel = enum(i32) {
+    primary = 0,
+    secondary = 1,
+    _,
+};
+
+/// Command pool create info
+pub const VkCommandPoolCreateInfo = extern struct {
+    sType: u32 = 39, // VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    queueFamilyIndex: u32 = 0,
+};
+
+/// Command buffer allocate info
+pub const VkCommandBufferAllocateInfo = extern struct {
+    sType: u32 = 40, // VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
+    pNext: ?*const anyopaque = null,
+    commandPool: VkCommandPool,
+    level: VkCommandBufferLevel = .primary,
+    commandBufferCount: u32 = 1,
+};
+
+/// Command buffer inheritance info (for secondary command buffers)
+pub const VkCommandBufferInheritanceInfo = extern struct {
+    sType: u32 = 41, // VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO
+    pNext: ?*const anyopaque = null,
+    renderPass: u64 = 0, // VkRenderPass
+    subpass: u32 = 0,
+    framebuffer: u64 = 0, // VkFramebuffer
+    occlusionQueryEnable: VkBool32 = VK_FALSE,
+    queryFlags: u32 = 0,
+    pipelineStatistics: u32 = 0,
+};
+
+/// Command buffer begin info
+pub const VkCommandBufferBeginInfo = extern struct {
+    sType: u32 = 42, // VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+    pInheritanceInfo: ?*const VkCommandBufferInheritanceInfo = null,
+};
+
+/// Command buffer usage flags
+pub const VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: u32 = 0x00000001;
+pub const VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT: u32 = 0x00000002;
+pub const VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: u32 = 0x00000004;
+
+// =============================================================================
+// Queue Submit Types
+// =============================================================================
+
+/// Submit info for queue submission
+pub const VkSubmitInfo = extern struct {
+    sType: u32 = 4, // VK_STRUCTURE_TYPE_SUBMIT_INFO
+    pNext: ?*const anyopaque = null,
+    waitSemaphoreCount: u32 = 0,
+    pWaitSemaphores: ?[*]const u64 = null, // VkSemaphore handles
+    pWaitDstStageMask: ?[*]const u32 = null, // VkPipelineStageFlags
+    commandBufferCount: u32 = 0,
+    pCommandBuffers: ?[*]const VkCommandBuffer = null,
+    signalSemaphoreCount: u32 = 0,
+    pSignalSemaphores: ?[*]const u64 = null, // VkSemaphore handles
+};
+
+/// Fence create info
+pub const VkFenceCreateInfo = extern struct {
+    sType: u32 = 8, // VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+};
+
+/// Fence create flags
+pub const VK_FENCE_CREATE_SIGNALED_BIT: u32 = 0x00000001;
+
+/// Semaphore create info
+pub const VkSemaphoreCreateInfo = extern struct {
+    sType: u32 = 9, // VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+    pNext: ?*const anyopaque = null,
+    flags: u32 = 0,
+};
 
 // =============================================================================
 // Layer and Extension Properties
@@ -995,6 +1135,85 @@ pub const PFN_vkCreateSwapchainKHR = *const fn (VkDevice, *const VkSwapchainCrea
 pub const PFN_vkDestroySwapchainKHR = *const fn (VkDevice, u64, ?*const VkAllocationCallbacks) callconv(.c) void;
 pub const PFN_vkAcquireNextImageKHR = *const fn (VkDevice, u64, u64, u64, u64, *u32) callconv(.c) i32;
 pub const PFN_vkQueuePresentKHR = *const fn (VkQueue, *const VkPresentInfoKHR) callconv(.c) i32;
+pub const PFN_vkGetSwapchainImagesKHR = *const fn (VkDevice, u64, *u32, ?[*]VkImage) callconv(.c) i32;
+
+// Core create functions
+pub const PFN_vkCreateInstance = *const fn (*const VkInstanceCreateInfo, ?*const VkAllocationCallbacks, *VkInstance) callconv(.c) i32;
+pub const PFN_vkCreateDevice = *const fn (VkPhysicalDevice, *const VkDeviceCreateInfo, ?*const VkAllocationCallbacks, *VkDevice) callconv(.c) i32;
+
+// Command pool functions
+pub const PFN_vkCreateCommandPool = *const fn (VkDevice, *const VkCommandPoolCreateInfo, ?*const VkAllocationCallbacks, *VkCommandPool) callconv(.c) VkResult;
+pub const PFN_vkDestroyCommandPool = *const fn (VkDevice, VkCommandPool, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkResetCommandPool = *const fn (VkDevice, VkCommandPool, u32) callconv(.c) VkResult;
+
+// Command buffer functions
+pub const PFN_vkAllocateCommandBuffers = *const fn (VkDevice, *const VkCommandBufferAllocateInfo, [*]VkCommandBuffer) callconv(.c) VkResult;
+pub const PFN_vkFreeCommandBuffers = *const fn (VkDevice, VkCommandPool, u32, [*]const VkCommandBuffer) callconv(.c) void;
+pub const PFN_vkBeginCommandBuffer = *const fn (VkCommandBuffer, *const VkCommandBufferBeginInfo) callconv(.c) VkResult;
+pub const PFN_vkEndCommandBuffer = *const fn (VkCommandBuffer) callconv(.c) VkResult;
+pub const PFN_vkResetCommandBuffer = *const fn (VkCommandBuffer, u32) callconv(.c) VkResult;
+
+// Image copy/blit commands
+pub const PFN_vkCmdCopyImage = *const fn (VkCommandBuffer, VkImage, u32, VkImage, u32, u32, [*]const VkImageCopy) callconv(.c) void;
+pub const PFN_vkCmdBlitImage = *const fn (VkCommandBuffer, VkImage, u32, VkImage, u32, u32, [*]const VkImageBlit, VkFilter) callconv(.c) void;
+
+// Queue functions
+pub const PFN_vkQueueSubmit = *const fn (VkQueue, u32, [*]const VkSubmitInfo, VkFence) callconv(.c) VkResult;
+pub const PFN_vkQueueWaitIdle = *const fn (VkQueue) callconv(.c) VkResult;
+pub const PFN_vkDeviceWaitIdle = *const fn (VkDevice) callconv(.c) VkResult;
+pub const PFN_vkGetDeviceQueue = *const fn (VkDevice, u32, u32, *VkQueue) callconv(.c) void;
+
+// Fence functions
+pub const PFN_vkCreateFence = *const fn (VkDevice, *const VkFenceCreateInfo, ?*const VkAllocationCallbacks, *VkFence) callconv(.c) VkResult;
+pub const PFN_vkDestroyFence = *const fn (VkDevice, VkFence, ?*const VkAllocationCallbacks) callconv(.c) void;
+pub const PFN_vkWaitForFences = *const fn (VkDevice, u32, [*]const VkFence, VkBool32, u64) callconv(.c) VkResult;
+pub const PFN_vkResetFences = *const fn (VkDevice, u32, [*]const VkFence) callconv(.c) VkResult;
+
+// Semaphore functions
+pub const PFN_vkCreateSemaphore = *const fn (VkDevice, *const VkSemaphoreCreateInfo, ?*const VkAllocationCallbacks, *u64) callconv(.c) VkResult;
+pub const PFN_vkDestroySemaphore = *const fn (VkDevice, u64, ?*const VkAllocationCallbacks) callconv(.c) void;
+
+// =============================================================================
+// Loader Link Structures (for layer chaining)
+// =============================================================================
+
+pub const VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO: u32 = 0;
+pub const VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO: u32 = 0;
+
+pub const VkLayerFunction = enum(i32) {
+    layer_link_info = 0,
+    loader_data_callback = 1,
+    loader_layer_create_device_callback = 2,
+    loader_layer_create_instance_callback = 3,
+    _,
+};
+
+pub const VkLayerInstanceLink = extern struct {
+    pNext: ?*VkLayerInstanceLink,
+    pfnNextGetInstanceProcAddr: PFN_vkGetInstanceProcAddr,
+    pfnNextCreateInstance: PFN_vkCreateInstance,
+};
+
+pub const VkLayerDeviceLink = extern struct {
+    pNext: ?*VkLayerDeviceLink,
+    pfnNextGetInstanceProcAddr: PFN_vkGetInstanceProcAddr,
+    pfnNextGetDeviceProcAddr: PFN_vkGetDeviceProcAddr,
+    pfnNextCreateDevice: PFN_vkCreateDevice,
+};
+
+pub const VkLayerInstanceCreateInfo = extern struct {
+    sType: u32,
+    pNext: ?*const anyopaque,
+    function: VkLayerFunction,
+    pLayerInfo: ?*VkLayerInstanceLink,
+};
+
+pub const VkLayerDeviceCreateInfo = extern struct {
+    sType: u32,
+    pNext: ?*const anyopaque,
+    function: VkLayerFunction,
+    pLayerInfo: ?*VkLayerDeviceLink,
+};
 
 // =============================================================================
 // Dynamic Loader
@@ -1094,6 +1313,33 @@ pub const DeviceDispatch = struct {
     vkDestroySwapchainKHR: ?PFN_vkDestroySwapchainKHR = null,
     vkAcquireNextImageKHR: ?PFN_vkAcquireNextImageKHR = null,
     vkQueuePresentKHR: ?PFN_vkQueuePresentKHR = null,
+    vkGetSwapchainImagesKHR: ?PFN_vkGetSwapchainImagesKHR = null,
+    // Command pool functions
+    vkCreateCommandPool: ?PFN_vkCreateCommandPool = null,
+    vkDestroyCommandPool: ?PFN_vkDestroyCommandPool = null,
+    vkResetCommandPool: ?PFN_vkResetCommandPool = null,
+    // Command buffer allocation/lifecycle
+    vkAllocateCommandBuffers: ?PFN_vkAllocateCommandBuffers = null,
+    vkFreeCommandBuffers: ?PFN_vkFreeCommandBuffers = null,
+    vkBeginCommandBuffer: ?PFN_vkBeginCommandBuffer = null,
+    vkEndCommandBuffer: ?PFN_vkEndCommandBuffer = null,
+    vkResetCommandBuffer: ?PFN_vkResetCommandBuffer = null,
+    // Image copy/blit commands
+    vkCmdCopyImage: ?PFN_vkCmdCopyImage = null,
+    vkCmdBlitImage: ?PFN_vkCmdBlitImage = null,
+    // Queue functions
+    vkQueueSubmit: ?PFN_vkQueueSubmit = null,
+    vkQueueWaitIdle: ?PFN_vkQueueWaitIdle = null,
+    vkDeviceWaitIdle: ?PFN_vkDeviceWaitIdle = null,
+    vkGetDeviceQueue: ?PFN_vkGetDeviceQueue = null,
+    // Fence functions
+    vkCreateFence: ?PFN_vkCreateFence = null,
+    vkDestroyFence: ?PFN_vkDestroyFence = null,
+    vkWaitForFences: ?PFN_vkWaitForFences = null,
+    vkResetFences: ?PFN_vkResetFences = null,
+    // Semaphore functions
+    vkCreateSemaphore: ?PFN_vkCreateSemaphore = null,
+    vkDestroySemaphore: ?PFN_vkDestroySemaphore = null,
 
     pub fn init(device: VkDevice, getDeviceProcAddr: PFN_vkGetDeviceProcAddr) DeviceDispatch {
         return .{
@@ -1142,6 +1388,33 @@ pub const DeviceDispatch = struct {
             .vkDestroySwapchainKHR = @ptrCast(getDeviceProcAddr(device, "vkDestroySwapchainKHR")),
             .vkAcquireNextImageKHR = @ptrCast(getDeviceProcAddr(device, "vkAcquireNextImageKHR")),
             .vkQueuePresentKHR = @ptrCast(getDeviceProcAddr(device, "vkQueuePresentKHR")),
+            .vkGetSwapchainImagesKHR = @ptrCast(getDeviceProcAddr(device, "vkGetSwapchainImagesKHR")),
+            // Command pool functions
+            .vkCreateCommandPool = @ptrCast(getDeviceProcAddr(device, "vkCreateCommandPool")),
+            .vkDestroyCommandPool = @ptrCast(getDeviceProcAddr(device, "vkDestroyCommandPool")),
+            .vkResetCommandPool = @ptrCast(getDeviceProcAddr(device, "vkResetCommandPool")),
+            // Command buffer allocation/lifecycle
+            .vkAllocateCommandBuffers = @ptrCast(getDeviceProcAddr(device, "vkAllocateCommandBuffers")),
+            .vkFreeCommandBuffers = @ptrCast(getDeviceProcAddr(device, "vkFreeCommandBuffers")),
+            .vkBeginCommandBuffer = @ptrCast(getDeviceProcAddr(device, "vkBeginCommandBuffer")),
+            .vkEndCommandBuffer = @ptrCast(getDeviceProcAddr(device, "vkEndCommandBuffer")),
+            .vkResetCommandBuffer = @ptrCast(getDeviceProcAddr(device, "vkResetCommandBuffer")),
+            // Image copy/blit commands
+            .vkCmdCopyImage = @ptrCast(getDeviceProcAddr(device, "vkCmdCopyImage")),
+            .vkCmdBlitImage = @ptrCast(getDeviceProcAddr(device, "vkCmdBlitImage")),
+            // Queue functions
+            .vkQueueSubmit = @ptrCast(getDeviceProcAddr(device, "vkQueueSubmit")),
+            .vkQueueWaitIdle = @ptrCast(getDeviceProcAddr(device, "vkQueueWaitIdle")),
+            .vkDeviceWaitIdle = @ptrCast(getDeviceProcAddr(device, "vkDeviceWaitIdle")),
+            .vkGetDeviceQueue = @ptrCast(getDeviceProcAddr(device, "vkGetDeviceQueue")),
+            // Fence functions
+            .vkCreateFence = @ptrCast(getDeviceProcAddr(device, "vkCreateFence")),
+            .vkDestroyFence = @ptrCast(getDeviceProcAddr(device, "vkDestroyFence")),
+            .vkWaitForFences = @ptrCast(getDeviceProcAddr(device, "vkWaitForFences")),
+            .vkResetFences = @ptrCast(getDeviceProcAddr(device, "vkResetFences")),
+            // Semaphore functions
+            .vkCreateSemaphore = @ptrCast(getDeviceProcAddr(device, "vkCreateSemaphore")),
+            .vkDestroySemaphore = @ptrCast(getDeviceProcAddr(device, "vkDestroySemaphore")),
         };
     }
 
@@ -1166,6 +1439,27 @@ pub const DeviceDispatch = struct {
         return self.vkCreateComputePipelines != null and
             self.vkCreateShaderModule != null and
             self.vkCmdDispatch != null;
+    }
+
+    /// Check if frame injection capabilities are available
+    /// Requires command buffer management and image copy/blit functions
+    pub fn hasFrameInjection(self: *const DeviceDispatch) bool {
+        return self.vkCreateCommandPool != null and
+            self.vkAllocateCommandBuffers != null and
+            self.vkBeginCommandBuffer != null and
+            self.vkEndCommandBuffer != null and
+            self.vkQueueSubmit != null and
+            (self.vkCmdCopyImage != null or self.vkCmdBlitImage != null) and
+            self.vkAcquireNextImageKHR != null and
+            self.vkQueuePresentKHR != null and
+            self.vkGetSwapchainImagesKHR != null;
+    }
+
+    /// Check if synchronization primitives are available
+    pub fn hasSynchronization(self: *const DeviceDispatch) bool {
+        return self.vkCreateFence != null and
+            self.vkWaitForFences != null and
+            self.vkCreateSemaphore != null;
     }
 };
 

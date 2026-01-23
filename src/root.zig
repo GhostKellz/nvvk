@@ -132,6 +132,24 @@ pub const FrameGenMode = frame_generation.FrameGenMode;
 pub const FrameGenStats = frame_generation.FrameGenStats;
 pub const GeneratedFrame = frame_generation.GeneratedFrame;
 
+// Frame injection host hooks (layer exports)
+pub extern fn nvvk_register_swapchain_images(
+    device: vulkan.VkDevice,
+    swapchain: vulkan.VkSwapchainKHR_T,
+    images: [*]const vulkan.VkImage,
+    image_count: u32,
+    width: u32,
+    height: u32,
+    format: u32,
+) callconv(.c) bool;
+
+pub extern fn nvvk_notify_rendered_image(
+    device: vulkan.VkDevice,
+    swapchain: vulkan.VkSwapchainKHR_T,
+    image: vulkan.VkImage,
+    layout: u32,
+) callconv(.c) void;
+
 // Present injection exports
 pub const PresentInjectionContext = present_injection.PresentInjectionContext;
 pub const InjectionConfig = present_injection.InjectionConfig;
@@ -168,7 +186,7 @@ pub const VALIDATION_LAYER_NAME = validation.VALIDATION_LAYER_NAME;
 pub const version = std.SemanticVersion{
     .major = 0,
     .minor = 4,
-    .patch = 2,
+    .patch = 3,
 };
 
 /// Check if running on NVIDIA GPU (basic check via driver name)
@@ -316,7 +334,7 @@ pub const ext_names = struct {
 test "version" {
     try std.testing.expectEqual(@as(u8, 0), version.major);
     try std.testing.expectEqual(@as(u8, 4), version.minor);
-    try std.testing.expectEqual(@as(u8, 2), version.patch);
+    try std.testing.expectEqual(@as(u8, 3), version.patch);
 }
 
 test "extension names" {

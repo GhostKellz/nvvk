@@ -665,3 +665,49 @@ export fn nvvk_present_injection_get_stats(handle: ?*const PresentInjectionHandl
 export fn nvvk_get_layer_name() [*:0]const u8 {
     return nvvk.present_injection.LAYER_NAME;
 }
+
+// =============================================================================
+// Frame Injection Host API
+//
+// These functions allow host runtimes (ghostVK, primetime) to register
+// swapchain images and notify the layer of rendered frames.
+// =============================================================================
+
+/// Register swapchain images with the nvvk layer for frame injection.
+/// Call this after creating a swapchain to enable frame generation for it.
+export fn nvvk_register_swapchain_images(
+    device: NvvkDevice,
+    swapchain: u64,
+    images: [*]const *anyopaque,
+    image_count: u32,
+    width: u32,
+    height: u32,
+    format: u32,
+) bool {
+    // Forward to the layer implementation
+    return nvvk.nvvk_register_swapchain_images(
+        @ptrCast(device),
+        swapchain,
+        @ptrCast(images),
+        image_count,
+        width,
+        height,
+        format,
+    );
+}
+
+/// Notify the layer of the most recently rendered image for a swapchain.
+/// Call this after rendering to an image but before presenting it.
+export fn nvvk_notify_rendered_image(
+    device: NvvkDevice,
+    swapchain: u64,
+    image: *anyopaque,
+    layout: u32,
+) void {
+    nvvk.nvvk_notify_rendered_image(
+        @ptrCast(device),
+        swapchain,
+        @ptrCast(image),
+        layout,
+    );
+}
