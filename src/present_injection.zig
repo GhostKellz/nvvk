@@ -19,7 +19,8 @@ const vrr = @import("vrr.zig");
 
 /// Get current time in microseconds using monotonic clock
 fn getTimeMicros() u64 {
-    const ts = std.posix.clock_gettime(.MONOTONIC) catch return 0;
+    var ts: std.c.timespec = undefined;
+    if (std.c.clock_gettime(.MONOTONIC, &ts) != 0) return 0;
     return @as(u64, @intCast(ts.sec)) * 1_000_000 + @as(u64, @intCast(ts.nsec)) / 1000;
 }
 
