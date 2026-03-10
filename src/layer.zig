@@ -43,10 +43,30 @@ const VK_ERROR_LAYER_NOT_PRESENT: i32 = -6;
 const VK_ERROR_FEATURE_NOT_PRESENT: i32 = -8;
 
 // =============================================================================
+// Simple Spinlock Mutex (Zig 0.16+ compatible)
+// =============================================================================
+
+const Mutex = struct {
+    state: std.atomic.Value(u32) = .init(0),
+
+    const Self = @This();
+
+    pub fn lock(self: *Self) void {
+        while (self.state.cmpxchgWeak(0, 1, .acquire, .monotonic) != null) {
+            std.atomic.spinLoopHint();
+        }
+    }
+
+    pub fn unlock(self: *Self) void {
+        self.state.store(0, .release);
+    }
+};
+
+// =============================================================================
 // Global State
 // =============================================================================
 
-var global_lock: std.Thread.Mutex = .{};
+var global_lock: Mutex = .{};
 var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
 
 // Queue-to-device mapping for proper multi-device support

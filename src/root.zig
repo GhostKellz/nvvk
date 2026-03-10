@@ -186,7 +186,7 @@ pub const VALIDATION_LAYER_NAME = validation.VALIDATION_LAYER_NAME;
 pub const version = std.SemanticVersion{
     .major = 0,
     .minor = 4,
-    .patch = 3,
+    .patch = 5,
 };
 
 /// Check if running on NVIDIA GPU (basic check via driver name)
@@ -232,10 +232,10 @@ pub fn getNvidiaDriverVersion(allocator: std.mem.Allocator) ?[]const u8 {
 
 /// Recommended minimum driver version for optimal nvvk functionality
 pub const recommended_driver = struct {
-    pub const major: u32 = 590;
-    pub const minor: u32 = 48;
-    pub const patch: u32 = 1;
-    pub const string = "590.48.01";
+    pub const major: u32 = 595;
+    pub const minor: u32 = 45;
+    pub const patch: u32 = 4;
+    pub const string = "595.45.04";
 };
 
 /// Parsed driver version
@@ -244,7 +244,7 @@ pub const DriverVersion = struct {
     minor: u32,
     patch: u32,
 
-    /// Parse version string (e.g., "590.48.01") into components
+    /// Parse version string (e.g., "595.45.04") into components
     pub fn parse(version_str: []const u8) ?DriverVersion {
         var parts = std.mem.splitScalar(u8, version_str, '.');
         const major_str = parts.next() orelse return null;
@@ -285,6 +285,26 @@ pub const DriverVersion = struct {
     /// Check if this version has EGL multisample fixes (590+)
     pub fn hasEglMultisampleFix(self: DriverVersion) bool {
         return self.major >= 590;
+    }
+
+    /// Check if this version has VK_NV_present_metering support (595+)
+    pub fn hasPresentMetering(self: DriverVersion) bool {
+        return self.major >= 595;
+    }
+
+    /// Check if this version has VK_NV_cooperative_vector support (595+)
+    pub fn hasCooperativeVector(self: DriverVersion) bool {
+        return self.major >= 595;
+    }
+
+    /// Check if this version has VK_NV_cluster_acceleration_structure (595+)
+    pub fn hasClusterAccelerationStructure(self: DriverVersion) bool {
+        return self.major >= 595;
+    }
+
+    /// Check if this version has VK_NV_partitioned_acceleration_structure (595+)
+    pub fn hasPartitionedAccelerationStructure(self: DriverVersion) bool {
+        return self.major >= 595;
     }
 };
 
@@ -334,7 +354,7 @@ pub const ext_names = struct {
 test "version" {
     try std.testing.expectEqual(@as(u8, 0), version.major);
     try std.testing.expectEqual(@as(u8, 4), version.minor);
-    try std.testing.expectEqual(@as(u8, 3), version.patch);
+    try std.testing.expectEqual(@as(u8, 5), version.patch);
 }
 
 test "extension names" {
@@ -343,32 +363,46 @@ test "extension names" {
 }
 
 test "DriverVersion parsing" {
-    const v1 = DriverVersion.parse("590.48.01").?;
-    try std.testing.expectEqual(@as(u32, 590), v1.major);
-    try std.testing.expectEqual(@as(u32, 48), v1.minor);
-    try std.testing.expectEqual(@as(u32, 1), v1.patch);
+    const v1 = DriverVersion.parse("595.45.04").?;
+    try std.testing.expectEqual(@as(u32, 595), v1.major);
+    try std.testing.expectEqual(@as(u32, 45), v1.minor);
+    try std.testing.expectEqual(@as(u32, 4), v1.patch);
 
     const v2 = DriverVersion.parse("535.183.01").?;
     try std.testing.expectEqual(@as(u32, 535), v2.major);
     try std.testing.expect(!v2.meetsRecommended());
 
-    const v3 = DriverVersion.parse("590.48.01").?;
+    const v3 = DriverVersion.parse("595.45.04").?;
     try std.testing.expect(v3.meetsRecommended());
     try std.testing.expect(v3.hasSwapchainFix());
     try std.testing.expect(v3.hasWayland120Support());
     try std.testing.expect(v3.hasDpiFix());
+    try std.testing.expect(v3.hasPresentMetering());
+    try std.testing.expect(v3.hasCooperativeVector());
 }
 
 test "DriverVersion 590+ feature checks" {
     const old = DriverVersion{ .major = 535, .minor = 183, .patch = 1 };
     try std.testing.expect(!old.hasSwapchainFix());
     try std.testing.expect(!old.hasWayland120Support());
+    try std.testing.expect(!old.hasPresentMetering());
 
     const new = DriverVersion{ .major = 590, .minor = 48, .patch = 1 };
     try std.testing.expect(new.hasSwapchainFix());
     try std.testing.expect(new.hasWayland120Support());
     try std.testing.expect(new.hasDpiFix());
     try std.testing.expect(new.hasEglMultisampleFix());
+    try std.testing.expect(!new.hasPresentMetering()); // 590 doesn't have 595+ features
+}
+
+test "DriverVersion 595+ feature checks" {
+    const v595 = DriverVersion{ .major = 595, .minor = 45, .patch = 4 };
+    try std.testing.expect(v595.hasSwapchainFix());
+    try std.testing.expect(v595.hasWayland120Support());
+    try std.testing.expect(v595.hasPresentMetering());
+    try std.testing.expect(v595.hasCooperativeVector());
+    try std.testing.expect(v595.hasClusterAccelerationStructure());
+    try std.testing.expect(v595.hasPartitionedAccelerationStructure());
 }
 
 test {

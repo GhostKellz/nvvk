@@ -25,7 +25,7 @@
     .fingerprint = 0x9c42d6e4651f398, // Changing this has security and trust implications.
     // Tracks the earliest Zig version that the package considers to be a
     // supported use case.
-    .minimum_zig_version = "0.16.0-dev.2193+fc517bd01",
+    .minimum_zig_version = "0.16.0-dev.2736+3b515fbed",
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
@@ -35,7 +35,7 @@
         // nvsync - VRR/G-Sync detection for frame pacing
         .nvsync = .{
             .url = "https://github.com/ghostkellz/nvsync/archive/main.tar.gz",
-            .hash = "nvsync-0.2.3-yy7g7dNiAwAwdqaRZ1Ta-9Yb4O2WGWq2Go3sox1__bcU",
+            .hash = "nvsync-0.2.4-yy7g7dliAwAWU2wHGpOqiq-2hAb2WiczA9St5rbK4nCg",
         },
     },
     // Specifies the set of files and directories that are included in this package.

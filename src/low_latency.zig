@@ -7,12 +7,16 @@
 //! - Sleeping to optimize frame pacing
 //! - Collecting latency timing data
 //!
-//! Requires NVIDIA driver 590+ (590.48.01 recommended) and VK_NV_low_latency2 extension.
+//! Requires NVIDIA driver 590+ (595.45.04 recommended) and VK_NV_low_latency2 extension.
 //!
 //! Driver 590+ Benefits:
 //! - Swapchain recreation no longer causes latency spikes (critical for window resize)
 //! - More consistent frame pacing with low latency mode enabled
 //! - Better Wayland 1.20+ compositor integration
+//!
+//! Driver 595+ Benefits:
+//! - VK_NV_present_metering for improved frame pacing feedback
+//! - Enhanced VRR/G-Sync timing coordination
 
 const std = @import("std");
 const vk = @import("vulkan.zig");
@@ -474,11 +478,28 @@ pub const LatencyStats = struct {
 // Thread-Safe Wrapper
 // =============================================================================
 
+// Simple Spinlock Mutex (Zig 0.16+ compatible)
+const Mutex = struct {
+    state: std.atomic.Value(u32) = .init(0),
+
+    const Self = @This();
+
+    pub fn lock(self: *Self) void {
+        while (self.state.cmpxchgWeak(0, 1, .acquire, .monotonic) != null) {
+            std.atomic.spinLoopHint();
+        }
+    }
+
+    pub fn unlock(self: *Self) void {
+        self.state.store(0, .release);
+    }
+};
+
 /// Thread-safe wrapper for LowLatencyContext
 /// Use this when multiple threads may access Reflex functionality
 pub const ThreadSafeLowLatencyContext = struct {
     inner: LowLatencyContext,
-    mutex: std.Thread.Mutex = .{},
+    mutex: Mutex = .{},
 
     pub fn init(
         device: vk.VkDevice,

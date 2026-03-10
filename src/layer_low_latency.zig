@@ -28,10 +28,30 @@ pub const LAYER_IMPLEMENTATION_VERSION: u32 = 1;
 pub const LAYER_SPEC_VERSION: u32 = vk.VK_API_VERSION_1_4;
 
 // =============================================================================
+// Simple Spinlock Mutex (Zig 0.16+ compatible)
+// =============================================================================
+
+const Mutex = struct {
+    state: std.atomic.Value(u32) = .init(0),
+
+    const Self = @This();
+
+    pub fn lock(self: *Self) void {
+        while (self.state.cmpxchgWeak(0, 1, .acquire, .monotonic) != null) {
+            std.atomic.spinLoopHint();
+        }
+    }
+
+    pub fn unlock(self: *Self) void {
+        self.state.store(0, .release);
+    }
+};
+
+// =============================================================================
 // Global State
 // =============================================================================
 
-var global_lock: std.Thread.Mutex = .{};
+var global_lock: Mutex = .{};
 var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
 
 const SwapchainData = struct {
