@@ -81,7 +81,7 @@ const DiagnosticsHandle = struct {
     dispatch: nvvk.DeviceDispatch,
 };
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = std.heap.smp_allocator;
 
 // =============================================================================
 // Low Latency C API
@@ -93,7 +93,6 @@ export fn nvvk_low_latency_init(
     swapchain: NvvkSwapchain,
     get_device_proc_addr: *const fn (*anyopaque, [*:0]const u8) callconv(.c) ?*const fn () callconv(.c) void,
 ) ?*LowLatencyHandle {
-    const allocator = gpa.allocator();
 
     const handle = allocator.create(LowLatencyHandle) catch return null;
 
@@ -107,7 +106,7 @@ export fn nvvk_low_latency_init(
 /// Destroy low latency context
 export fn nvvk_low_latency_destroy(handle: ?*LowLatencyHandle) void {
     if (handle) |h| {
-        gpa.allocator().destroy(h);
+        allocator.destroy(h);
     }
 }
 
@@ -214,7 +213,6 @@ export fn nvvk_low_latency_get_timings(
     max_count: u32,
 ) u32 {
     const h = handle orelse return 0;
-    const allocator = gpa.allocator();
 
     const zig_timings = h.ctx.getTimings(allocator) catch return 0;
     defer allocator.free(zig_timings);
@@ -292,8 +290,6 @@ export fn nvvk_diagnostics_init(
     device: NvvkDevice,
     get_device_proc_addr: *const fn (*anyopaque, [*:0]const u8) callconv(.c) ?*const fn () callconv(.c) void,
 ) ?*DiagnosticsHandle {
-    const allocator = gpa.allocator();
-
     const handle = allocator.create(DiagnosticsHandle) catch return null;
 
     const vk_device: nvvk.VkDevice = @ptrCast(device);
@@ -306,7 +302,7 @@ export fn nvvk_diagnostics_init(
 /// Destroy diagnostics context
 export fn nvvk_diagnostics_destroy(handle: ?*DiagnosticsHandle) void {
     if (handle) |h| {
-        gpa.allocator().destroy(h);
+        allocator.destroy(h);
     }
 }
 
@@ -439,8 +435,6 @@ export fn nvvk_frame_gen_init(
     mode: NvvkFrameGenMode,
     get_device_proc_addr: ?*const fn (*anyopaque, [*:0]const u8) callconv(.c) ?*const fn () callconv(.c) void,
 ) ?*FrameGenHandle {
-    const allocator = gpa.allocator();
-
     const handle = allocator.create(FrameGenHandle) catch return null;
 
     const zig_mode: nvvk.FrameGenMode = switch (mode) {
@@ -477,7 +471,7 @@ export fn nvvk_frame_gen_init(
 export fn nvvk_frame_gen_destroy(handle: ?*FrameGenHandle) void {
     if (handle) |h| {
         h.ctx.deinit();
-        gpa.allocator().destroy(h);
+        allocator.destroy(h);
     }
 }
 
@@ -573,8 +567,6 @@ export fn nvvk_present_injection_init(
     injection_mode: NvvkInjectionMode,
     timing_mode: NvvkTimingMode,
 ) ?*PresentInjectionHandle {
-    const allocator = gpa.allocator();
-
     const handle = allocator.create(PresentInjectionHandle) catch return null;
 
     const zig_injection_mode: nvvk.InjectionMode = switch (injection_mode) {
@@ -612,7 +604,7 @@ export fn nvvk_present_injection_init(
 export fn nvvk_present_injection_destroy(handle: ?*PresentInjectionHandle) void {
     if (handle) |h| {
         h.ctx.deinit();
-        gpa.allocator().destroy(h);
+        allocator.destroy(h);
     }
 }
 

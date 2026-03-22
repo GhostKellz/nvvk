@@ -52,7 +52,7 @@ const Mutex = struct {
 // =============================================================================
 
 var global_lock: Mutex = .{};
-var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+const global_alloc = std.heap.smp_allocator;
 
 const SwapchainData = struct {
     swapchain: u64,
@@ -77,8 +77,7 @@ var maps_initialized = false;
 
 fn ensureMapsInitialized() void {
     if (!maps_initialized) {
-        const allocator = gpa.allocator();
-        device_map = std.AutoHashMap(usize, *DeviceData).init(allocator);
+        device_map = std.AutoHashMap(usize, *DeviceData).init(global_alloc);
         maps_initialized = true;
     }
 }

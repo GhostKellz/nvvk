@@ -67,7 +67,7 @@ const Mutex = struct {
 // =============================================================================
 
 var global_lock: Mutex = .{};
-var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+const global_alloc = std.heap.smp_allocator;
 
 // Queue-to-device mapping for proper multi-device support
 var queue_to_device_map: std.AutoHashMap(usize, usize) = undefined;
@@ -75,7 +75,7 @@ var queue_map_initialized = false;
 
 fn ensureQueueMapInitialized() void {
     if (!queue_map_initialized) {
-        queue_to_device_map = std.AutoHashMap(usize, usize).init(gpa.allocator());
+        queue_to_device_map = std.AutoHashMap(usize, usize).init(global_alloc);
         queue_map_initialized = true;
     }
 }
@@ -302,9 +302,8 @@ var maps_initialized = false;
 
 fn ensureMapsInitialized() void {
     if (!maps_initialized) {
-        const allocator = gpa.allocator();
-        instance_map = std.AutoHashMap(usize, *InstanceData).init(allocator);
-        device_map = std.AutoHashMap(usize, *DeviceData).init(allocator);
+        instance_map = std.AutoHashMap(usize, *InstanceData).init(global_alloc);
+        device_map = std.AutoHashMap(usize, *DeviceData).init(global_alloc);
         maps_initialized = true;
     }
 }
@@ -515,21 +514,20 @@ export fn nvvk_vkCreateInstance(
         return result;
     }
 
-    const allocator = gpa.allocator();
-    var data = allocator.create(InstanceData) catch {
+    var data = global_alloc.create(InstanceData) catch {
         global_lock.unlock();
         return result;
     };
     data.* = .{
         .instance = p_instance.*,
         .get_instance_proc_addr = link.pfnNextGetInstanceProcAddr,
-        .physical_devices = .{},
-        .allocator = allocator,
+        .physical_devices = .empty,
+        .allocator = global_alloc,
     };
 
     instance_map.put(@intFromPtr(p_instance.*), data) catch {
-        data.physical_devices.deinit(allocator);
-        allocator.destroy(data);
+        data.physical_devices.deinit(global_alloc);
+        global_alloc.destroy(data);
     };
 
     global_lock.unlock();
@@ -594,8 +592,6 @@ export fn nvvk_vkCreateDevice(
         return result;
     }
 
-    const allocator = gpa.allocator();
-
     var queue_family_index: u32 = 0;
     if (p_create_info.queueCreateInfoCount > 0) {
         if (p_create_info.pQueueCreateInfos) |queues| {
@@ -607,7 +603,7 @@ export fn nvvk_vkCreateDevice(
     const debug = getEnvBool("NVVK_FRAME_GEN_DEBUG", false);
     const mode = getEnvMode();
 
-    var data = allocator.create(DeviceData) catch {
+    var data = global_alloc.create(DeviceData) catch {
         global_lock.unlock();
         return result;
     };
@@ -619,10 +615,10 @@ export fn nvvk_vkCreateDevice(
         .get_device_proc_addr = link.pfnNextGetDeviceProcAddr,
         .dispatch = vk.DeviceDispatch.init(p_device.*, link.pfnNextGetDeviceProcAddr),
         .frame_gen = null,
-        .swapchain_contexts = std.AutoHashMap(u64, *present_injection.PresentInjectionContext).init(allocator),
-        .swapchain_resources = std.AutoHashMap(u64, SwapchainInjectionResources).init(allocator),
-        .swapchain_sources = std.AutoHashMap(u64, vk.VkImage).init(allocator),
-        .swapchain_source_layouts = std.AutoHashMap(u64, u32).init(allocator),
+        .swapchain_contexts = std.AutoHashMap(u64, *present_injection.PresentInjectionContext).init(global_alloc),
+        .swapchain_resources = std.AutoHashMap(u64, SwapchainInjectionResources).init(global_alloc),
+        .swapchain_sources = std.AutoHashMap(u64, vk.VkImage).init(global_alloc),
+        .swapchain_source_layouts = std.AutoHashMap(u64, u32).init(global_alloc),
         .injection_cmd_pool = null,
         .injection_cmd_buffer = null,
         .injection_fence = 0,
@@ -631,13 +627,13 @@ export fn nvvk_vkCreateDevice(
         .enabled = enabled,
         .mode = mode,
         .debug = debug,
-        .allocator = allocator,
+        .allocator = global_alloc,
     };
 
     device_map.put(@intFromPtr(p_device.*), data) catch {
         data.swapchain_resources.deinit();
         data.swapchain_contexts.deinit();
-        allocator.destroy(data);
+        global_alloc.destroy(data);
     };
 
     global_lock.unlock();

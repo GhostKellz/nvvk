@@ -11,7 +11,7 @@ pub fn main() !void {
     });
     std.debug.print("=========================================\n\n", .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .{};
     defer _ = gpa.deinit();
 
     // Check NVIDIA GPU
