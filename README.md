@@ -4,11 +4,11 @@
 
 A Zig library providing optimized NVIDIA Vulkan extension wrappers with C ABI exports for integration with DXVK, vkd3d-proton, and other Vulkan-based translation layers.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Zig](https://img.shields.io/badge/Zig-0.16.0+-orange.svg)](https://ziglang.org)
-[![Vulkan](https://img.shields.io/badge/Vulkan-1.4+-red.svg)](https://www.vulkan.org)
-[![NVIDIA](https://img.shields.io/badge/NVIDIA-590+-green.svg)](https://developer.nvidia.com/vulkan-driver)
-[![Linux](https://img.shields.io/badge/Linux-Only-blue.svg)](https://kernel.org)
+[![MIT](https://img.shields.io/badge/MIT-green?style=for-the-badge)](LICENSE)
+[![Zig](https://img.shields.io/badge/Zig-orange?style=for-the-badge)](https://ziglang.org)
+[![Vulkan](https://img.shields.io/badge/Vulkan-red?style=for-the-badge)](https://www.vulkan.org)
+[![NVIDIA](https://img.shields.io/badge/NVIDIA-76B900?style=for-the-badge)](https://developer.nvidia.com/vulkan-driver)
+[![Linux](https://img.shields.io/badge/Linux-blue?style=for-the-badge)](https://kernel.org)
 
 > **⚠️ Experimental Project** - This project is under active development and not fully tested. Use at your own risk.
 
